@@ -13,7 +13,7 @@ Plays DVD images and `VIDEO_TS` folders in WittyMediaServer the way a DVD player
 
 Decoding the video and audio is left to the player: WittyDVD says which bytes to play, when, and what to draw over them. Turning those steps into streams stays with the server.
 
-How to use it is in **Help** inside WittyMediaServer: see the DVD guide.
+How to use it is in **Help** inside WittyMediaServer: see DVDs.
 
 ## How to get it
 
