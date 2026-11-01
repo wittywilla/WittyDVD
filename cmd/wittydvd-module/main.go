@@ -5,8 +5,12 @@ package main
 
 import (
 	"github.com/wittywilla/wittydvd"
+	"github.com/wittywilla/wittydvd/diagnose"
 	"github.com/wittywilla/wittydvd/wire"
 	"github.com/wittywilla/wittymodule"
 )
 
-func main() { wittymodule.Main(wittydvd.ManifestJSON, new(wire.Helper).Handle) }
+func main() {
+	h := &diagnose.Handler{Next: new(wire.Helper).Handle}
+	wittymodule.Main(wittydvd.ManifestJSON, h.Handle)
+}
