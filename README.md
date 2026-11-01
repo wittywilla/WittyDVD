@@ -20,8 +20,7 @@
   <a href="https://github.com/wittywilla/WittyMediaServer/blob/master/docs/DVD.md">DVD guide</a>
 </p>
 
-> Read-only mirror of `modules/wittydvd` in [WittyMediaServer](https://github.com/wittywilla/WittyMediaServer),
-> where development happens. Please open issues and pull requests there.
+> WittyDVD is developed and released here. Issues and pull requests are welcome.
 
 WittyDVD is the DVD engine of [WittyMediaServer](https://github.com/wittywilla/WittyMediaServer), and a
 library and tool for anyone building a player. It is an original implementation of the public
