@@ -6,5 +6,5 @@ toolchain go1.27.3
 
 require (
 	github.com/wittywilla/wittydisc v0.1.0
-	github.com/wittywilla/wittymodule v0.1.0
+	github.com/wittywilla/wittymodule v0.3.0
 )

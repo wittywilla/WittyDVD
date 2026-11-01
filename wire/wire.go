@@ -33,6 +33,7 @@ const (
 	MethodCell  = "cell"  // CellCall; answers file extents
 	MethodSubs  = "subs"  // CellCall; answers a cell's sub-pictures
 	MethodRuns  = "runs"  // RunsCall; answers a title's runs
+	MethodSPU   = "spu"   // SPUCall; answers a sub-picture's frames
 
 	// Navigator calls take a NavCall and answer a NavAnswer.
 	MethodStart     = "start"
@@ -101,6 +102,26 @@ type MenuCall struct {
 	First   uint32                   `json:"first"`
 	Last    uint32                   `json:"last"`
 	Options wittydvd.MenuScanOptions `json:"options"`
+}
+
+// Opened is what "open" says along with the disc's structure.
+type Opened struct {
+	Label  string `json:"label,omitempty"`
+	Format string `json:"format,omitempty"`
+}
+
+// SPUCall asks for one sub-picture unit to be drawn, in a program chain's colours.
+type SPUCall struct {
+	Bytes   []byte     `json:"bytes"`
+	Palette [16]uint32 `json:"palette"`
+}
+
+// SPUFrame is one picture a sub-picture unit shows, cut to what it draws.
+type SPUFrame struct {
+	Image    *wittydvd.RGBA
+	Forced   bool
+	StartSec float64
+	StopSec  float64 // <0 when absent
 }
 
 // RangeCall asks where a run of sectors is.

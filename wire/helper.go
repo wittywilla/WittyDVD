@@ -46,6 +46,9 @@ func coded(err error) error {
 // Handle answers one call. It is a wittymodule.Handler.
 func (h *Helper) Handle(method string, params json.RawMessage) (any, []byte, error) {
 	blob, err := h.answer(method, params)
+	if err == nil && method == MethodOpen {
+		return Opened{Label: h.opened.Label, Format: h.opened.Format}, blob, nil
+	}
 	return nil, blob, err
 }
 
@@ -65,6 +68,20 @@ func (h *Helper) answer(method string, params json.RawMessage) ([]byte, error) {
 		}
 		h.opened = o
 		return EncodeDisc(o.Disc)
+	case MethodSPU:
+		var c SPUCall
+		if err := json.Unmarshal(params, &c); err != nil {
+			return nil, refuse(CodeBadCall, "unreadable sub-picture")
+		}
+		frames, err := wittydvd.DecodeSPUFrames(c.Bytes)
+		if err != nil {
+			return nil, coded(err)
+		}
+		out := make([]SPUFrame, 0, len(frames))
+		for _, f := range frames {
+			out = append(out, SPUFrame{Image: f.Render(c.Palette, nil).Crop(), Forced: f.Forced, StartSec: f.StartSec, StopSec: f.StopSec})
+		}
+		return Encode(out)
 	}
 	if h.opened == nil {
 		return nil, refuse(CodeBadCall, "no disc is open")
