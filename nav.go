@@ -155,8 +155,7 @@ func (n *Nav) fresh() *navState {
 	return &navState{regs: NewRegisters(ro)}
 }
 
-// Clone returns an independent navigator in the same state (for what-if
-// exploration such as `wms dvd crawl`).
+// Clone returns an independent navigator in the same state, for what-if exploration.
 func (n *Nav) Clone() *Nav {
 	return &Nav{Disc: n.Disc, opts: n.opts, st: n.st.clone()}
 }
