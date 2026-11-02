@@ -2,6 +2,26 @@
 
 Plays DVD images and `VIDEO_TS` folders in WittyMediaServer the way a DVD player does, with their real menus. You need it if your disc libraries hold DVDs.
 
+<!-- pictures -->
+
+![A DVD's own animated menu in a browser](docs/images/dvd-menu.webp)
+
+<sub>The disc's own menu, in a browser. [Sintel](https://durian.blender.org/), Blender Foundation, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), from its original DVD.</sub>
+
+![A disc's page](docs/images/dvd-item.webp)
+
+<sub>A disc's page in WittyMediaServer. [Sintel](https://durian.blender.org/), Blender Foundation, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).</sub>
+
+![A disc in the tray](docs/images/dvd-tray.webp)
+
+<sub>A disc going in. [Sintel](https://durian.blender.org/), Blender Foundation, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).</sub>
+
+![The Playback and discs page in Settings](docs/images/settings-playback.webp)
+
+<sub>Settings, Playback & discs, in WittyMediaServer.</sub>
+
+<!-- /pictures -->
+
 ## What it does
 
 - **Plays the disc's own program:** first play, menus with highlighted buttons, titles, chapters, angles, audio and subtitle choices, stills, resume points and parental blocks. It runs the disc's commands in a small virtual machine.
