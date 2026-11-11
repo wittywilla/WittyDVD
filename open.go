@@ -57,6 +57,9 @@ type Opened struct {
 	subs    map[subsKey]*CellSubs
 	ranges  map[rangesKey][]SectorRange
 	stats   readCounters
+
+	rankOnce sync.Once
+	rank     *Ranking
 }
 
 // scanKey identifies a menu scan whose result does not depend on viewer
@@ -775,6 +778,19 @@ type TitleSummary struct {
 	Subp     []SubpAttr  `json:"subtitles"`
 	Video    VideoAttr   `json:"video"`
 	Cells    []TitleCell `json:"-"`
+	// ChapterSource says where the chapter times come from: "chapterTable"
+	// (VTS_PTT_SRPT), "programs" (the table names nothing this title plays,
+	// so each program is a chapter) or "" (no chapters).
+	ChapterSource string `json:"chapterSource,omitempty"`
+	// Estimated says some cells give no play time of their own, and theirs
+	// was worked out from the time map or their share of the sectors.
+	Estimated bool `json:"timesEstimated,omitempty"`
+	// Truncated says the title lists more cells than any real title has, and
+	// only the first of them were read.
+	Truncated bool `json:"truncated,omitempty"`
+	// Path says how the cells were found: "chapters" (the chapter table and
+	// next-PGC links) or "commands" (a dry run of the title's own commands).
+	Path string `json:"path,omitempty"`
 }
 
 // TitleCell is one cell of a flattened title with its PGC.
@@ -798,50 +814,6 @@ func (d *Disc) Titles() []TitleSummary {
 
 // Title flattens one title by number.
 func (d *Disc) Title(number int) *TitleSummary { return d.TitleAngle(number, 1) }
-
-// TitleAngle flattens a title for one camera angle (1-based); cells inside
-// angle blocks are replaced by that angle's cell.
-func (d *Disc) TitleAngle(number, angle int) *TitleSummary {
-	if number < 1 || number > len(d.VMG.Titles) {
-		return nil
-	}
-	t := d.VMG.Titles[number-1]
-	v := d.VTS[t.VTS]
-	if v == nil || t.VTSTitle < 1 || t.VTSTitle > len(v.PTT) {
-		return nil
-	}
-	ts := &TitleSummary{Number: number, VTS: t.VTS, VTSTitle: t.VTSTitle, Angles: t.Angles, Audio: v.Audio, Subp: v.Subp, Video: v.Video}
-	ptts := v.PTT[t.VTSTitle-1]
-	if len(ptts) == 0 {
-		return ts
-	}
-	// Walk PGCs starting from the first chapter's PGC, following next_pgcn.
-	seen := map[int]bool{}
-	pgcn := ptts[0].PGCN
-	chapterAt := map[[2]int]bool{}
-	for _, p := range ptts {
-		chapterAt[[2]int{p.PGCN, p.PGN}] = true
-	}
-	for pgcn >= 1 && pgcn <= len(v.PGCs) && !seen[pgcn] {
-		seen[pgcn] = true
-		p := v.PGCs[pgcn-1].PGC
-		for n := 1; n >= 1 && n <= len(p.Cells); n = nextCellN(p, n) {
-			k := angleCell(p, n, angle)
-			c := p.Cells[k-1]
-			pg := programOf(p, n)
-			if chapterAt[[2]int{pgcn, pg}] && (len(p.Programs) == 0 || p.Programs[pg-1] == n) {
-				ts.Chapters = append(ts.Chapters, ts.Duration)
-			}
-			ts.Cells = append(ts.Cells, TitleCell{PGCN: pgcn, CellN: k, Cell: c, Start: ts.Duration})
-			ts.Duration += c.Duration
-		}
-		if p.NextPGCN == 0 {
-			break
-		}
-		pgcn = p.NextPGCN
-	}
-	return ts
-}
 
 // nextTitlePGC is the PGC a title continues with after pgcn: its next-PGC
 // link, or else the next PGC the title's chapter table names (discs whose

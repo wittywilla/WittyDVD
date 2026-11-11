@@ -243,7 +243,7 @@ type PGCEntry struct {
 	BlockType   int  `json:"blockType"`   // 1 = parental block (alternative versions of a scene)
 	// ParentalMask names the parental IDs this PGC is for; inside a parental
 	// block the player plays the PGC whose mask matches PTL_MAIT for its level.
-	ParentalMask int  `json:"parentalMask"`
+	ParentalMask int `json:"parentalMask"`
 	// Damaged says the chain could not be read at all: PGC is then an empty
 	// stand-in that keeps the row's number.
 	Damaged bool `json:"damaged,omitempty"`

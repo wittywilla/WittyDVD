@@ -17,6 +17,19 @@ type Registers struct {
 	SPRM      [24]uint16
 	clockFrac float64
 	Rand      func() float64
+	// fuel, when set, is how many more commands and navigator hops may run:
+	// the title analysis dry-runs a disc's programs many times over, and a
+	// disc written to waste a player's time must not waste all of it.
+	fuel *int64
+}
+
+// spend takes n from the fuel and reports whether any is left.
+func (r *Registers) spend(n int64) bool {
+	if r.fuel == nil {
+		return true
+	}
+	*r.fuel -= n
+	return *r.fuel > 0
 }
 
 // SPRM indexes.
@@ -957,6 +970,8 @@ func decodeCached(c Command) *Instr {
 
 const maxVMSteps = 10000
 
+const errFuel = "the analysis budget is spent"
+
 // RunOptions tune Run.
 type RunOptions struct {
 	Start int  // 0-based first instruction
@@ -977,6 +992,10 @@ func (r *Registers) Run(cmds []Command, o RunOptions) Result {
 		}
 		if pc < 0 || pc >= len(cmds) {
 			res.Steps = steps
+			return res
+		}
+		if !r.spend(1) {
+			res.Kind, res.Reason = ResultStop, errFuel
 			return res
 		}
 		in := decodeCached(cmds[pc])

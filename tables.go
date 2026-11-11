@@ -222,17 +222,17 @@ func parseTMAPTI(r reader, base int) ([]timeMap, tableDiag) {
 	return out, diag
 }
 
-// at is how far into its program chain the VOBU at a sector plays, in
-// seconds, and whether the map can say. It only holds for chains that play
-// their sectors in order.
-func (m timeMap) at(sector uint32) (float64, bool) {
+// at is how far into its program chain the VOBU at a sector starts playing,
+// in seconds (to the map's time unit), and whether the map can say. It only
+// holds for chains that play their sectors in order.
+func (m timeMap) at(sector uint64) (float64, bool) {
 	if m.unit <= 0 || len(m.entries) == 0 {
 		return 0, false
 	}
 	if !sort.SliceIsSorted(m.entries, func(i, j int) bool { return m.entries[i] < m.entries[j] }) {
 		return 0, false
 	}
-	k := sort.Search(len(m.entries), func(i int) bool { return m.entries[i] > sector })
+	k := sort.Search(len(m.entries), func(i int) bool { return uint64(m.entries[i]) >= sector })
 	return float64(k * m.unit), true
 }
 

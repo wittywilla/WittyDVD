@@ -228,23 +228,9 @@ func TestDecoyWarning(t *testing.T) {
 // The menu's default button plays title 3: only an opened disc can see it,
 // from the NAV pack of the menu VOB. The IFOs alone still pick title 1.
 func TestMenuPlayButton(t *testing.T) {
-	files := menuDisc(0).files()
-	pci := make([]byte, pciMin)
-	pci[pciHLISS+1] = 1
-	pci[pciBTNNS] = 1
-	pci[pciBTNMD] = 0x10
-	b := pciBTNIT
-	pci[b] = 1<<6 | byte(100>>4)
-	pci[b+1] = byte(100&0x0f)<<4 | byte(200>>8)
-	pci[b+2] = byte(200 & 0xff)
-	pci[b+3] = byte(50 >> 4)
-	pci[b+4] = byte(50&0x0f)<<4 | byte(80>>8)
-	pci[b+5] = byte(80 & 0xff)
-	cmd := jumpTT(3)
-	copy(pci[b+10:], cmd[:])
-	dsi := make([]byte, 0x3fa)
-	files["VIDEO_TS/VIDEO_TS.VOB"] = &fstest.MapFile{Data: navSector(pci, dsi)}
-	o, err := Open(writeDir(t, files))
+	d := menuDisc(0)
+	d.menus = []fxPGC{{menu: 3, buttons: []Command{jumpTT(3)}}}
+	o, err := Open(d.writeFolder(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,6 +244,15 @@ func TestMenuPlayButton(t *testing.T) {
 	}
 	if c := r.Candidate(3); !c.Flags.Has(FlagMenuPlay | FlagMenuTarget) {
 		t.Fatalf("flags %s", flagsOf(c))
+	}
+	if !r.ButtonsRead || r.Level != "high" {
+		t.Fatalf("buttons read %v, confidence %v %s", r.ButtonsRead, r.Confidence, r.Level)
+	}
+	// Titles 1 and 2 are on the disc, and nothing leads to them.
+	for _, n := range []int{1, 2} {
+		if c := r.Candidate(n); !c.Flags.Has(FlagUnreachable) {
+			t.Errorf("title %d flags %s, want unreachable", n, flagsOf(c))
+		}
 	}
 }
 

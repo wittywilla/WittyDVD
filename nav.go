@@ -523,6 +523,9 @@ func (n *Nav) settle(s *navState, a action, sim bool) *Step {
 		if a.t == actDone {
 			return a.step
 		}
+		if !s.regs.spend(1) {
+			return n.stopStep(s, errFuel)
+		}
 		a = n.step(s, a, sim)
 	}
 	return n.stopStep(s, fmt.Sprintf("the disc's programs kept jumping without showing anything (%d hops)", maxHops))
