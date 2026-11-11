@@ -5,7 +5,8 @@ What changed in WittyDVD, newest first. What changed before it had a repository 
 
 ## Unreleased
 
-- **WittyDVD 0.4.0:** The title ranking engine, table-by-table index reading with cross-table repair, padded unreadable sectors and the `analyze` and `readStats` calls listed above, for WittyMediaServer up to 0.8.x. The synthetic discs can be written out for other projects' tests (`WITTYDVD_SYNTH_OUT`).
+- **WittyDVD 0.4.0:** The title ranking engine, table-by-table index reading with cross-table repair, padded unreadable sectors and the `analyze` and `readStats` calls listed above, for WittyMediaServer up to 0.8.x. The synthetic discs can be written out for other projects' tests (`WITTYDVD_SYNTH_OUT`). Checked against images of pressed film discs, which showed two mistakes, both fixed: short titles of sub-second cells that the menus play (frame-by-frame animations) were called cell-spam decoys and the disc copy-protected, and a film's featurettes of about one length were called a TV disc's episodes.
+- `wittydvdplayer` 0.3.0: the player module answers two new calls, `guide` and `choose`: the ranked main title with why and how sure, the feature's whole length, its versions (angles, parental cuts, other cuts), a TV disc's episodes, the other titles, warnings, repairs and padded sectors. A film the disc chains through several titles, or that only its commands put together, plays as one stream in the engine's order.
 
 - **Title mapping:** a scoring engine ranks every title and explains its choice (`Disc.RankTitles`, `Disc.Analyze`, `Disc.Explain`, `Opened.Analyze`, and `wittydvd rank`). `MainTitle` uses it and keeps its signature. See `docs/TITLE-HEURISTICS.md`.
   - A title is read from its chapter table and by a bounded dry run of its own commands, and the reading that shows more real video is kept: a film that only `LinkPGCN` commands put together is found.

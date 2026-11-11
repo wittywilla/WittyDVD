@@ -316,13 +316,16 @@ type RankOptions struct {
 
 // Durations that steer the classification.
 const (
-	minFeatureSec   = 20 * 60 // first play reaching a title this long has found the film
-	stubSec         = 15
-	trailerSec      = 4 * 60
-	featuretteSec   = 45 * 60
-	maxFollowSteps  = 200
-	absurdCellSec   = 4 * 3600
-	minEpisodeSec   = 8 * 60
+	minFeatureSec  = 20 * 60 // first play reaching a title this long has found the film
+	stubSec        = 15
+	trailerSec     = 4 * 60
+	featuretteSec  = 45 * 60
+	maxFollowSteps = 200
+	absurdCellSec  = 4 * 3600
+	minEpisodeSec  = 8 * 60
+	// maxAnimationSec: a title shorter than this made of sub-second cells is an
+	// animation, not cell spam.
+	maxAnimationSec = 60
 	maxEpisodeSec   = 75 * 60
 	episodeTolerant = 0.15
 	// hollowMinSec and hollowSectorsPerSec say when a cell is hollow: it
@@ -956,7 +959,12 @@ func (a *analysis) scoreTitle(f *feat) {
 			c.add("scrambled", w.Scrambled, FlagShuffled, "a quarter or more of its steps jump back on the disc: it is put together from cells in no order")
 		}
 	}
-	if f.tiny >= 10 && f.tiny*2 >= cells || f.zero >= 20 {
+	// A short title made of very short cells that all have some length is a
+	// frame-by-frame animation, as a menu's transition or a game is authored:
+	// retail discs have them, and they can't pass for a film. Spam is cells of
+	// no length at all, or short cells padding something longer.
+	animation := f.zero == 0 && c.Duration < maxAnimationSec
+	if f.tiny >= 10 && f.tiny*2 >= cells && !animation || f.zero >= 20 {
 		c.add("cellSpam", w.CellSpam, FlagCellSpam, "%d of %d cells are under a second long (%d zero-length)", f.tiny, cells, f.zero)
 	}
 	if f.maxCell > absurdCellSec {

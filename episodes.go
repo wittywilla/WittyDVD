@@ -111,6 +111,27 @@ func (a *analysis) detectEpisodes() {
 		a.splitEpisodes() // two titles of a length are no TV disc
 		return
 	}
+	// A film's disc often has a few featurettes of about the same length.
+	// They are extras, not episodes, when a title that isn't their play-all
+	// is a film beside them: longer than all of them together, and at least
+	// three times the longest.
+	if playAll == nil {
+		var sum, longest float64
+		in := map[*feat]bool{}
+		for _, e := range eps {
+			sum += e.c.Duration
+			longest = max(longest, e.c.Duration)
+			in[e] = true
+		}
+		for _, f := range a.feats {
+			if in[f] || isDecoy(f) || f.c.Flags&(FlagDuplicate|FlagPart) != 0 || f.back > 0 || f.repeat > 0.02 {
+				continue
+			}
+			if f.c.Distinct >= minFeatureSec && f.c.Distinct > sum && f.c.Distinct >= 3*longest {
+				return
+			}
+		}
+	}
 	// Viewing order: where each episode starts inside the play-all title,
 	// else disc order (title set, first sector), else title number.
 	pos := map[*feat]float64{}
