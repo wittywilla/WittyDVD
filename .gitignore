@@ -7,3 +7,5 @@ go.work
 go.work.sum
 .claude/
 .dev-modules
+*.test
+*.prof
