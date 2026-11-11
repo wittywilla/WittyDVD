@@ -63,8 +63,14 @@ func dvdTime(b []byte) float64 {
 	if fps > 0 {
 		sec += float64(bcd(fb&0x3f)) / fps
 	}
-	return sec
+	// A time field holds at most 99:59:59. Bytes that aren't decimal digits
+	// (junk cells are often 0xff throughout) would read as more, and a
+	// server refuses a disc whose times no disc can have.
+	return min(sec, maxDVDTime)
 }
+
+// maxDVDTime is the longest time a DVD time field can state, in seconds.
+const maxDVDTime = 99*3600 + 59*60 + 59
 
 func langCode(b []byte) string {
 	if len(b) < 2 {

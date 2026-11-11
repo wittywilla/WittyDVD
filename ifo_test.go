@@ -184,3 +184,17 @@ func TestMainTitleSkipsDecoys(t *testing.T) {
 		t.Fatalf("main title: %+v", m)
 	}
 }
+
+// A time field of bytes that aren't digits reads as the longest time a DVD
+// can state, never more: junk cells are often 0xff throughout, and what a
+// server is told about a disc must be something a disc can say.
+func TestTimeFieldIsBounded(t *testing.T) {
+	for _, b := range [][]byte{{0xff, 0xff, 0xff, 0xff}, {0x99, 0x99, 0x99, 0xff}, {0xfa, 0x00, 0x00, 0x40}} {
+		if got := dvdTime(b); got > maxDVDTime || got < 0 {
+			t.Errorf("% x reads as %v seconds", b, got)
+		}
+	}
+	if got := dvdTime([]byte{0x01, 0x30, 0x15, 0x40 | 0x12}); got != 5415+12.0/25 {
+		t.Errorf("1:30:15 and 12 frames reads as %v", got)
+	}
+}

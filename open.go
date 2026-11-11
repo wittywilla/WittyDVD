@@ -525,6 +525,8 @@ const (
 	// one. Past it the rest of the request is padded without trying: a drive
 	// can take seconds over each sector of a deliberately unreadable zone.
 	badRunLimit = 32
+	// maxReadSectors is the most one ReadSectors call returns.
+	maxReadSectors = 1 << 15
 )
 
 type spaceReader struct {
@@ -557,6 +559,11 @@ func (r *spaceReader) ReadSectors(first uint32, count int) ([]byte, error) {
 	if count <= 0 {
 		return nil, nil
 	}
+	// One read is at most 64 MiB, whatever is asked: a count worked out
+	// from a cell that ends before it starts would otherwise ask for the
+	// whole VOB at once. A longer request comes back short, like a read at
+	// the end of the VOB.
+	count = min(count, maxReadSectors)
 	want := int64(count) * Sector
 	parts := sliceExtents(r.ext, int64(first)*Sector, want)
 	var have int64
