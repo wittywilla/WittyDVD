@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 WittyWilla and contributors
+
 package wittydvd
 
 // A builder for synthetic DVD index files. It writes real VIDEO_TS.IFO and

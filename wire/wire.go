@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 WittyWilla and contributors
+
 // Package wire is what a WittyDVD helper process and a server say to each other
 // about one open disc: the names of the calls and the form their answers travel in.
 //

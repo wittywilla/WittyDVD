@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 WittyWilla and contributors
+
 // Package dvd implements DVD-Video navigation: IFO parsing, the command
 // virtual machine, the navigator state machine, NAV-pack (PCI/DSI) parsing and
 // sub-picture (SPU) decoding for menu highlights.

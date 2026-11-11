@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 WittyWilla and contributors
+
 // Package wittydvdplayer is WittyDVD for a player: it turns the navigator's steps into
 // what a window shows. It builds into a helper of its own, so WittyDVD can be updated
 // without a new player, and a player links it as the built-in copy that always works.
