@@ -572,7 +572,7 @@ func (a *analysis) decide() {
 	}
 	conf = clampConf(conf)
 	r.Confidence, r.Level = conf, levelOf(conf)
-	why := Decision{Kind: "main", Titles: []int{r.Main}, Confidence: conf, Level: r.Level, Summary: fmt.Sprintf("Title %d is the main feature because %s.", r.Main, mainBecause(main))}
+	why := Decision{Kind: "main", Titles: []int{r.Main}, Confidence: conf, Level: r.Level, Summary: fmt.Sprintf("Title %d is the main feature because %s.", r.Main, r.mainBecause(main))}
 	for _, e := range main.Evidence {
 		switch {
 		case e.Points > 0:
@@ -720,7 +720,7 @@ func (a *analysis) warn() {
 			kind = fmt.Sprintf("%d titles with %d decoys is the layout of structural copy protection (ARccOS, RipGuard and similar).", len(r.Candidates), n)
 		}
 		r.Warnings = append(r.Warnings, fmt.Sprintf("This disc has %s; picked title %d because %s. %s Nothing is decrypted: the decoys are only skipped.",
-			pluralWord(n, "decoy title", "decoy titles"), main.TitleNum, mainBecause(main), kind))
+			pluralWord(n, "decoy title", "decoy titles"), main.TitleNum, r.mainBecause(main), kind))
 	}
 	if w := r.Why; w != nil && w.RunnerUp != 0 && w.Margin < 5 {
 		if next := r.Candidate(w.RunnerUp); next != nil {
@@ -752,7 +752,7 @@ func (a *analysis) warn() {
 }
 
 // mainBecause picks the strongest positive reasons for the main title.
-func mainBecause(c *Candidate) string {
+func (r *Ranking) mainBecause(c *Candidate) string {
 	var parts []string
 	if c.Flags.Has(FlagMenuPlay) {
 		parts = append(parts, "the menu's Play button starts it")
@@ -760,7 +760,20 @@ func mainBecause(c *Candidate) string {
 	if c.Flags.Has(FlagFirstPlay) {
 		parts = append(parts, "the disc starts it by itself")
 	}
-	parts = append(parts, fmt.Sprintf("it has the most distinct video (%s)", fmtDur(c.Distinct)))
+	most := true
+	for _, o := range r.Candidates {
+		if o.Distinct > c.Distinct && o.Class != ClassDecoy {
+			most = false
+		}
+	}
+	switch pl := r.Feature; {
+	case pl != nil && pl.Source == "chain":
+		parts = append(parts, fmt.Sprintf("it starts a feature of %s that the disc plays as %d titles in a row", fmtDur(pl.Duration), len(pl.Titles)))
+	case most:
+		parts = append(parts, fmt.Sprintf("it has the most distinct video (%s)", fmtDur(c.Distinct)))
+	default:
+		parts = append(parts, fmt.Sprintf("it has %s of distinct video and the best score", fmtDur(c.Distinct)))
+	}
 	if c.Flags&(FlagShuffled|FlagRepeats|FlagOutOfRange|FlagUnlisted|FlagHollow|FlagOverlap) == 0 {
 		parts = append(parts, "it plays its cells in order with nothing repeated or out of range")
 	}
