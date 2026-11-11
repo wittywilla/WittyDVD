@@ -5,6 +5,8 @@ What changed in WittyDVD, newest first. What changed before it had a repository 
 
 ## Unreleased
 
+- **WittyDVD 0.4.0:** The title ranking engine, table-by-table index reading with cross-table repair, padded unreadable sectors and the `analyze` and `readStats` calls listed above, for WittyMediaServer up to 0.8.x. The synthetic discs can be written out for other projects' tests (`WITTYDVD_SYNTH_OUT`).
+
 - **Title mapping:** a scoring engine ranks every title and explains its choice (`Disc.RankTitles`, `Disc.Analyze`, `Disc.Explain`, `Opened.Analyze`, and `wittydvd rank`). `MainTitle` uses it and keeps its signature. See `docs/TITLE-HEURISTICS.md`.
   - A title is read from its chapter table and by a bounded dry run of its own commands, and the reading that shows more real video is kept: a film that only `LinkPGCN` commands put together is found.
   - Decoys are told by cells that are replayed, shuffled, out of range, zero-length, hollow, overlapping or missing from the title set's own cell address table, by chains that loop, by title sets with no video files, and by titles no command and no menu button leads to. A scrambled title loses the credit for video that other titles play in order.

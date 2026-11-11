@@ -1,14 +1,14 @@
 {
   "id": "wittydvd",
   "name": "WittyDVD",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "repo": "wittywilla/WittyDVD",
   "license": "AGPL-3.0-or-later",
   "delivery": "helper",
   "entry": "wittydvd-module",
   "api": 3,
   "minServer": "0.6.0-alpha",
-  "maxServer": "0.6.x",
+  "maxServer": "0.8.x",
   "group": "discs",
   "summary": "DVD images with their real menus, chapters, angles and subtitles.",
   "libraries": [
