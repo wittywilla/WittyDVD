@@ -57,11 +57,30 @@ type dvdSession struct {
 	resumeAt float64
 	// seekTo is the exact title position to restart a rebuilt stream at.
 	seekTo float64
+
+	// guide is the engine's ranking as a window shows it, and feature the film laid
+	// out as one stream; both are worked out once (guide.go).
+	guide   *Guide
+	feature *featurePlan
+	planned bool
+	// parental is the parental level the session started with.
+	parental uint16
 }
 
 type dvdPlaying struct {
 	ts  *wittydvd.TitleSummary
 	idx int // index into ts.Cells of the cell playback started from
+	// titles names the title of each cell when ts is the feature's plan, which can
+	// run through several; nil for a title played by itself.
+	titles []int
+}
+
+// titleOf is the title a cell of what is playing belongs to.
+func (pl *dvdPlaying) titleOf(i int) int {
+	if pl.titles != nil {
+		return pl.titles[i]
+	}
+	return pl.ts.Number
 }
 
 type dvdArt struct {
@@ -91,6 +110,7 @@ func Open(path string, drive bool, prefs Prefs) (session.Session, error) {
 	}
 	s := &dvdSession{opened: o, prefs: prefs, drive: drive, lastTick: time.Now(), menus: map[int]*dvdArt{}, titles: map[int]*wittydvd.TitleSummary{}}
 	s.nav = wittydvd.NewNav(o.Disc, wittydvd.NavOptions{RegisterOptions: wittydvd.RegisterOptions{MenuLanguage: prefs.MenuLanguage, AudioLanguage: prefs.AudioLanguage, SubtitleLanguage: prefs.SubtitleLanguage}})
+	s.parental = s.nav.Registers().SPRM[wittydvd.SprmParental]
 	return s, nil
 }
 
@@ -98,18 +118,32 @@ func (s *dvdSession) Close() error { return s.opened.Close() }
 
 func (s *dvdSession) Info() Info {
 	in := Info{Kind: "dvd", Label: s.opened.Label, Titles: []TitleInfo{}}
-	if m := s.opened.Disc.MainTitle(); m != nil {
-		in.Main = m.Number
-	}
+	// The pick of the full ranking, which has read the menus' buttons too.
+	in.Main = s.rank().Main
 	for _, t := range s.opened.Disc.Titles() {
-		in.Titles = append(in.Titles, TitleInfo{N: t.Number, Duration: t.Duration, Chapters: len(t.Chapters), Main: t.Number == in.Main})
+		ti := TitleInfo{N: t.Number, Duration: t.Duration, Chapters: len(t.Chapters), Main: t.Number == in.Main}
+		// A title its commands put together is as long as the ranking read it.
+		if c := s.rank().Candidate(t.Number); c != nil && c.Path == "commands" {
+			ti.Duration, ti.Chapters = c.Duration, c.Chapters
+		}
+		in.Titles = append(in.Titles, ti)
 	}
 	return in
 }
 
 func (s *dvdSession) Start() *Presentation { return s.show(s.nav.Start()) }
 
+// PlayTitle plays a title from a chapter. For the title the feature starts at, the
+// chapters are the feature's, which can run on through other titles.
 func (s *dvdSession) PlayTitle(ttn, chapter int) *Presentation {
+	if fp := s.plan(); fp != nil && ttn == fp.ts.Number && chapter > 1 && s.angle(ttn) == 1 {
+		if chapter > len(fp.ts.Chapters) {
+			chapter = len(fp.ts.Chapters)
+		}
+		if chapter > 1 {
+			return s.playFrom(ttn, 1, fp.ts.Chapters[chapter-1])
+		}
+	}
 	return s.show(s.nav.PlayTitle(ttn, chapter))
 }
 
@@ -134,7 +168,7 @@ func (s *dvdSession) Do(a Action) *Presentation {
 	case "ended":
 		return s.ended()
 	case "title":
-		return s.show(s.nav.PlayTitle(a.TTN, a.Chapter))
+		return s.PlayTitle(a.TTN, a.Chapter)
 	case "menu":
 		kind := a.Menu
 		if kind == "" {
@@ -277,7 +311,19 @@ func (s *dvdSession) syncPosition(pos float64) {
 			k = i
 		}
 	}
-	if k < 0 || !s.nav.SyncTitleCell(cells[k].PGCN, cells[k].CellN) {
+	if k < 0 {
+		return
+	}
+	// A feature in several titles: the navigator has to be in the title the viewer
+	// has reached before it can be told the cell.
+	if t := s.playing.titleOf(k); s.playing.titles != nil {
+		if st := s.nav.Current(); st == nil || st.Title == nil || st.Title.TTN != t {
+			if st = s.nav.PlayTitle(t, 1); st.Kind != wittydvd.StepTitle || st.Title == nil || st.Title.TTN != t {
+				return
+			}
+		}
+	}
+	if !s.nav.SyncTitleCell(cells[k].PGCN, cells[k].CellN) {
 		return
 	}
 	s.playing.idx = k
@@ -294,7 +340,7 @@ func (s *dvdSession) ended() *Presentation {
 		st := s.nav.CellEnded()
 		for i := pl.idx + 1; i < len(pl.ts.Cells); i++ {
 			c := pl.ts.Cells[i]
-			if st.Kind != wittydvd.StepTitle || st.PGCN != c.PGCN || st.CellN != c.CellN || st.Title == nil || st.Title.TTN != cur.Title.TTN {
+			if st.Kind != wittydvd.StepTitle || st.PGCN != c.PGCN || st.CellN != c.CellN || st.Title == nil || st.Title.TTN != pl.titleOf(i) {
 				break
 			}
 			st = s.nav.CellEnded()
@@ -343,7 +389,7 @@ func (s *dvdSession) present(st *wittydvd.Step, rebuild bool) *Presentation {
 	case wittydvd.StepTitle:
 		// A rebuild (audio change) keeps the cell the viewer has reached.
 		pl := prev
-		if !rebuild || pl == nil || st.Title == nil || pl.ts.Number != st.Title.TTN || pl.ts != s.title(st.Title.TTN) {
+		if !rebuild || pl == nil || st.Title == nil || !s.stillPlays(pl, st.Title.TTN) {
 			pl = s.linearTitle(st)
 		}
 		if pl != nil {
@@ -374,7 +420,26 @@ func (s *dvdSession) present(st *wittydvd.Step, rebuild bool) *Presentation {
 	return p
 }
 
-// title returns the flattened title (cached per session).
+// stillPlays says a stream being played is still the right one for a step in a title,
+// so a rebuild (an audio change, a seek) can keep it.
+func (s *dvdSession) stillPlays(pl *dvdPlaying, ttn int) bool {
+	if pl.titles != nil {
+		if fp := s.plan(); fp == nil || fp.ts != pl.ts {
+			return false
+		}
+		for _, t := range pl.titles {
+			if t == ttn {
+				return true
+			}
+		}
+		return false
+	}
+	return pl.ts.Number == ttn && pl.ts == s.title(ttn)
+}
+
+// title returns the flattened title (cached per session). A title whose film only its
+// own commands put together is read the way the engine's ranking read it: its chapter
+// table alone would give a fragment.
 func (s *dvdSession) title(ttn int) *wittydvd.TitleSummary {
 	angle := s.angle(ttn)
 	key := ttn*16 + angle
@@ -382,6 +447,9 @@ func (s *dvdSession) title(ttn int) *wittydvd.TitleSummary {
 		return ts
 	}
 	ts := s.opened.Disc.TitleAngle(ttn, angle)
+	if c := s.rank().Candidate(ttn); angle == 1 && c != nil && c.Path == "commands" && c.Summary() != nil && len(c.Summary().Cells) > 0 {
+		ts = c.Summary()
+	}
 	s.titles[key] = ts
 	return ts
 }
@@ -432,15 +500,26 @@ func (s *dvdSession) linearTitle(st *wittydvd.Step) *dvdPlaying {
 	if st.Title == nil || st.Loop || st.Hold || st.StillSec != 0 {
 		return nil
 	}
-	ts := s.title(st.Title.TTN)
-	if ts == nil || len(ts.Cells) == 0 {
-		return nil
-	}
+	// A cell of the feature plays the feature: every title the disc chains into the
+	// film, on one timeline.
+	var ts *wittydvd.TitleSummary
+	var titles []int
 	idx := -1
-	for i, c := range ts.Cells {
-		if c.PGCN == st.PGCN && c.CellN == st.CellN {
-			idx = i
-			break
+	if fp := s.plan(); fp != nil && s.angle(fp.ts.Number) == 1 {
+		if idx = fp.find(st.Title.TTN, st.PGCN, st.CellN); idx >= 0 {
+			ts, titles = fp.ts, fp.titles
+		}
+	}
+	if idx < 0 {
+		ts = s.title(st.Title.TTN)
+		if ts == nil || len(ts.Cells) == 0 {
+			return nil
+		}
+		for i, c := range ts.Cells {
+			if c.PGCN == st.PGCN && c.CellN == st.CellN {
+				idx = i
+				break
+			}
 		}
 	}
 	if idx < 0 {
@@ -472,7 +551,7 @@ func (s *dvdSession) linearTitle(st *wittydvd.Step) *dvdPlaying {
 	if err == nil && interactive(pic) {
 		return nil
 	}
-	return &dvdPlaying{ts: ts, idx: idx}
+	return &dvdPlaying{ts: ts, idx: idx, titles: titles}
 }
 
 func interactive(pic *wittydvd.MenuPicture) bool {
@@ -648,6 +727,9 @@ func (s *dvdSession) titleAudio(v *wittydvd.VTS, pgc *wittydvd.PGC) int {
 func (s *dvdSession) buildTitle(st *wittydvd.Step, pl *dvdPlaying, p *Presentation) error {
 	ti := st.Title
 	ts := pl.ts
+	// The title the stream is known by: the one the feature starts at, whichever of
+	// its titles the navigator is in.
+	ttn := ts.Number
 	sp := wittydvd.Space{Domain: wittydvd.DomainVTS, VTS: ts.VTS}
 	start := ts.Cells[pl.idx].Start
 	switch {
@@ -681,8 +763,11 @@ func (s *dvdSession) buildTitle(st *wittydvd.Step, pl *dvdPlaying, p *Presentati
 		parts = append(parts, ext)
 		durations = append(durations, c.Cell.Duration)
 	}
-	angle := s.angle(ti.TTN)
-	m := newMedia("mpeg", fmt.Sprintf("t%d-x%x-g%d", ti.TTN, audioID, angle), parts, durations)
+	angle := s.angle(ttn)
+	m := newMedia("mpeg", fmt.Sprintf("t%d-x%x-g%d", ttn, audioID, angle), parts, durations)
+	if pl.titles != nil {
+		m.Token += "-f"
+	}
 	m.Video, m.Audio, m.Duration, m.Deinterlace = wittydvd.VideoStreamID, audioID, ts.Duration, true
 	if s.noVocals && audioN < len(v.Audio) && v.Audio[audioN].Karaoke() {
 		m.Token += "-nv"
@@ -699,7 +784,17 @@ func (s *dvdSession) buildTitle(st *wittydvd.Step, pl *dvdPlaying, p *Presentati
 		}
 	}
 	p.Media = m
-	tv := &TitleView{TTN: ti.TTN, Chapter: ti.PTTN, Duration: ts.Duration, StartSec: start, Chapters: ts.Chapters, AudioN: audioN, SubN: subN,
+	chapter := ti.PTTN
+	if pl.titles != nil {
+		// The feature's chapters are counted along the whole of it.
+		chapter = 1
+		for i, c := range ts.Chapters {
+			if c <= start+0.5 {
+				chapter = i + 1
+			}
+		}
+	}
+	tv := &TitleView{TTN: ttn, Chapter: chapter, Duration: ts.Duration, StartSec: start, Chapters: ts.Chapters, AudioN: audioN, SubN: subN,
 		Audio: []Track{}, Subtitles: []Track{}, FrameW: fw, FrameH: fh, Aspect: m.Aspect, ForcedStream: subRaw & 31, Angle: angle, Angles: 1}
 	if m.FrontOnly {
 		tv.AudioN = audioN | karaokeOff
@@ -711,8 +806,8 @@ func (s *dvdSession) buildTitle(st *wittydvd.Step, pl *dvdPlaying, p *Presentati
 			tv.Palette = append(tv.Palette, hex.EncodeToString([]byte{r, g, b}))
 		}
 	}
-	if ti.TTN >= 1 && ti.TTN <= len(s.opened.Disc.VMG.Titles) && s.opened.Disc.VMG.Titles[ti.TTN-1].Angles > 1 {
-		tv.Angles = s.opened.Disc.VMG.Titles[ti.TTN-1].Angles
+	if ttn >= 1 && ttn <= len(s.opened.Disc.VMG.Titles) && s.opened.Disc.VMG.Titles[ttn-1].Angles > 1 {
+		tv.Angles = s.opened.Disc.VMG.Titles[ttn-1].Angles
 	}
 	for i, a := range v.Audio {
 		if pgc != nil && i < 8 && pgc.AudioControl[i] < 0 {
