@@ -169,7 +169,12 @@ func (d fxDisc) vfiles() []vfile {
 // writeFolder writes the disc as a VIDEO_TS folder and returns its parent.
 func (d fxDisc) writeFolder(t testing.TB) string {
 	t.Helper()
-	root := t.TempDir()
+	return d.writeFolderAt(t, t.TempDir())
+}
+
+// writeFolderAt writes the disc as a VIDEO_TS folder in root.
+func (d fxDisc) writeFolderAt(t testing.TB, root string) string {
+	t.Helper()
 	dir := filepath.Join(root, "VIDEO_TS")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -254,6 +259,12 @@ func extentsOf(lba, size, limit int64) [][2]int64 {
 // The file is sparse.
 func (d fxDisc) writeImage(t testing.TB, opt imageOptions) string {
 	t.Helper()
+	return d.writeImageAt(t, opt, filepath.Join(t.TempDir(), "DISC.ISO"))
+}
+
+// writeImageAt writes the disc as an image at path.
+func (d fxDisc) writeImageAt(t testing.TB, opt imageOptions, path string) string {
+	t.Helper()
 	files := d.vfiles()
 	const (
 		isoRoot    = 20 // ISO 9660 root directory
@@ -274,7 +285,6 @@ func (d fxDisc) writeImage(t testing.TB, opt imageOptions) string {
 		at += (f.size + Sector - 1) / Sector
 	}
 	total := at + 300 // room for the closing anchors a real disc has
-	path := filepath.Join(t.TempDir(), "DISC.ISO")
 	out, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)
