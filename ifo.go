@@ -22,12 +22,27 @@ const Sector = 2048
 // Limits that keep hostile or broken discs from exhausting memory.
 const (
 	maxCommands    = 1024
-	maxPGCs        = 1000
+	maxPGCs        = 8192 // rows of one PGCIT (decoy discs carry thousands)
 	maxLangUnits   = 100
 	maxTitleSets   = 99
-	maxPTTEntries  = 100000
+	maxPTTEntries  = 2048 // chapters of one title
 	maxCellsPerPGC = 255
+	maxCellAddrs   = 32768   // rows of one C_ADT
+	maxVOBUs       = 1 << 20 // rows of one VOBU_ADMAP (a DVD-9 holds about 8.5 million sectors)
+	maxTimeMaps    = 8192
+	maxTimeEntries = 2048 // entries of one time map
+	// What one disc may hold in all, whatever its tables claim: each row of a
+	// PGCIT can point anywhere, so a few kilobytes could otherwise ask for
+	// gigabytes.
+	maxDiscPGCs  = 32768
+	maxDiscCells = 400000
 )
+
+// budget is what parsing may still allocate. One is shared by every index
+// file of a disc; ParseVMG and ParseVTS called by themselves get their own.
+type budget struct{ pgcs, cells int }
+
+func newBudget() *budget { return &budget{pgcs: maxDiscPGCs, cells: maxDiscCells} }
 
 // Time is a DVD time stamp converted to seconds.
 func bcd(b byte) int { return int(b>>4)*10 + int(b&0x0f) }
@@ -212,6 +227,8 @@ type PGC struct {
 	Pre          []Command        `json:"-"`
 	Post         []Command        `json:"-"`
 	CellCmds     []Command        `json:"-"`
+
+	unreadable bool // stands in for a chain that lies outside the file
 }
 
 // Command is one 8-byte VM instruction.
@@ -227,7 +244,10 @@ type PGCEntry struct {
 	// ParentalMask names the parental IDs this PGC is for; inside a parental
 	// block the player plays the PGC whose mask matches PTL_MAIT for its level.
 	ParentalMask int  `json:"parentalMask"`
-	PGC          *PGC `json:"-"`
+	// Damaged says the chain could not be read at all: PGC is then an empty
+	// stand-in that keeps the row's number.
+	Damaged bool `json:"damaged,omitempty"`
+	PGC     *PGC `json:"-"`
 }
 
 // LangUnit is a menu language unit.
@@ -273,6 +293,11 @@ type VMG struct {
 	MenuVOBSectors uint32
 	// Parental is the parental management table (PTL_MAIT), per country.
 	Parental []ParentalCountry
+	// MenuCellAddrs is the menu VOB's cell address table (VMGM_C_ADT).
+	MenuCellAddrs []CellAddr
+
+	menuVOBUs []uint32
+	diag      ifoDiag
 }
 
 // ParentalCountry is one country's parental management masks: Masks[level-1]
@@ -301,6 +326,19 @@ type VTS struct {
 	// (0 when unknown). Cells that start beyond them are junk.
 	MenuVOBSectors  uint32
 	TitleVOBSectors uint32
+	// CellAddrs is the cell address table of the title VOBs (VTS_C_ADT):
+	// where each cell the title set really holds lies. MenuCellAddrs is the
+	// same for the menu VOB. Both are empty when the IFO has no such table.
+	CellAddrs     []CellAddr
+	MenuCellAddrs []CellAddr
+	// VOBUs is how many VOBUs the title VOBs hold according to
+	// VTS_VOBU_ADMAP (0 when the IFO has no such table).
+	VOBUs int
+
+	vobus     []uint32 // VOBU start sectors, ascending (VTS_VOBU_ADMAP)
+	menuVOBUs []uint32
+	timeMaps  []timeMap // per PGC (VTS_TMAPTI)
+	diag      ifoDiag
 }
 
 var ErrBadIFO = errors.New("dvd: malformed IFO")
@@ -309,7 +347,26 @@ type reader struct {
 	b []byte
 }
 
-func (r reader) ok(off, n int) bool { return off >= 0 && n >= 0 && off+n <= len(r.b) }
+// ok reports whether [off, off+n) lies inside the file. It is written so
+// that no offset, however large, overflows (int is 32 bits on some builds).
+func (r reader) ok(off, n int) bool { return off >= 0 && n >= 0 && n <= len(r.b) && off <= len(r.b)-n }
+
+// sector is the byte offset of a sector of the file, or -1 when the file
+// doesn't reach that far.
+func (r reader) sector(sec uint32) int {
+	if uint64(sec)*Sector >= uint64(len(r.b)) {
+		return -1
+	}
+	return int(sec) * Sector
+}
+
+// rel is base+off, or -1 when that lies outside the file.
+func (r reader) rel(base int, off uint32) int {
+	if base < 0 || uint64(off) > uint64(len(r.b)) || base > len(r.b)-int(off) {
+		return -1
+	}
+	return base + int(off)
+}
 func (r reader) u8(off int) int {
 	if !r.ok(off, 1) {
 		return 0
@@ -335,9 +392,22 @@ func (r reader) bytes(off, n int) []byte {
 	return r.b[off : off+n]
 }
 
-func parsePGC(r reader, base int) (*PGC, error) {
+// emptyPGC stands in for a program chain that can't be read, so nothing that
+// walks a PGC table meets a nil.
+func emptyPGC() *PGC {
+	p := &PGC{}
+	for i := range p.AudioControl {
+		p.AudioControl[i] = -1
+	}
+	return p
+}
+
+// parsePGC reads one program chain. It fails only when the fixed part of the
+// chain lies outside the file; a table inside it that is cut short keeps
+// what could be read and says so in the second result.
+func parsePGC(r reader, base int, bud *budget) (*PGC, string, error) {
 	if !r.ok(base, 0xec) {
-		return nil, fmt.Errorf("%w: PGC at %#x runs past end", ErrBadIFO, base)
+		return nil, "", fmt.Errorf("%w: PGC at %#x runs past end", ErrBadIFO, base)
 	}
 	p := &PGC{
 		Duration:     dvdTime(r.bytes(base+4, 4)),
@@ -348,6 +418,7 @@ func parsePGC(r reader, base int) (*PGC, error) {
 		StillTime:    r.u8(base + 0xa2),
 		PlaybackMode: r.u8(base + 0xa3),
 	}
+	damage := ""
 	nPrograms := r.u8(base + 2)
 	nCells := r.u8(base + 3)
 	for i := 0; i < 8; i++ {
@@ -373,6 +444,10 @@ func parsePGC(r reader, base int) (*PGC, error) {
 
 	if progOff != 0 {
 		for i := 0; i < nPrograms; i++ {
+			if !r.ok(base+progOff+i, 1) {
+				damage = "program map cut short"
+				break
+			}
 			p.Programs = append(p.Programs, r.u8(base+progOff+i))
 		}
 	}
@@ -380,8 +455,14 @@ func parsePGC(r reader, base int) (*PGC, error) {
 		for i := 0; i < nCells && i < maxCellsPerPGC; i++ {
 			o := base + cellPbOff + i*24
 			if !r.ok(o, 24) {
-				return nil, fmt.Errorf("%w: cell playback table truncated", ErrBadIFO)
+				damage = "cell playback table cut short"
+				break
 			}
+			if bud.cells <= 0 {
+				damage = "the disc lists more cells than a disc can hold"
+				break
+			}
+			bud.cells--
 			cat := r.u8(o)
 			c := Cell{
 				BlockMode:        (cat >> 6) & 3,
@@ -401,22 +482,32 @@ func parsePGC(r reader, base int) (*PGC, error) {
 			}
 			p.Cells = append(p.Cells, c)
 		}
+	} else if nCells != 0 {
+		damage = "cells counted but no cell playback table"
 	}
 	if cellPosOff != 0 {
 		for i := range p.Cells {
 			o := base + cellPosOff + i*4
+			if !r.ok(o, 4) {
+				damage = "cell position table cut short"
+				break
+			}
 			p.Cells[i].VOBID = r.u16(o)
 			p.Cells[i].CellID = r.u8(o + 3)
 		}
 	}
 	if cmdOff != 0 {
 		c := base + cmdOff
+		if !r.ok(c, 8) {
+			damage = "command table outside the file"
+		}
 		nPre, nPost, nCell := r.u16(c), r.u16(c+2), r.u16(c+4)
 		take := func(first, n int) []Command {
 			var out []Command
 			for i := 0; i < n && i < maxCommands; i++ {
 				o := c + 8 + (first+i)*8
 				if !r.ok(o, 8) {
+					damage = "command table cut short"
 					break
 				}
 				var cmd Command
@@ -429,25 +520,64 @@ func parsePGC(r reader, base int) (*PGC, error) {
 		p.Post = take(nPre, nPost)
 		p.CellCmds = take(nPre+nPost, nCell)
 	}
-	return p, nil
+	return p, damage, nil
 }
 
-func parsePGCIT(r reader, base int) ([]PGCEntry, error) {
+// parsePGCIT reads a program chain table. A row whose chain can't be read
+// keeps its place with an empty chain, so PGC numbers stay what the disc's
+// commands expect; the diagnosis says how many there were. Rows that point
+// at the same chain (decoy discs list one chain hundreds of times) share it.
+func parsePGCIT(r reader, base int, bud *budget) ([]PGCEntry, tableDiag) {
 	if !r.ok(base, 8) {
-		return nil, fmt.Errorf("%w: PGCIT outside file", ErrBadIFO)
+		return nil, damaged("outside the file")
 	}
 	n := r.u16(base)
+	diag := tableDiag{state: tableOK}
+	if n == 0 {
+		return nil, damaged("lists no program chain")
+	}
 	if n > maxPGCs {
 		n = maxPGCs
+		diag = damaged(fmt.Sprintf("lists more than %d program chains: the rest are left out", maxPGCs))
 	}
-	out := make([]PGCEntry, 0, n)
+	if !r.ok(base+8, 8) {
+		return nil, damaged("cut short")
+	}
+	out := make([]PGCEntry, 0, min(n, (len(r.b)-base-8)/8))
+	seen := map[uint32]*PGC{}
+	bad, first := 0, ""
 	for i := 0; i < n; i++ {
 		o := base + 8 + i*8
-		cat := r.u32(o)
-		at := base + int(r.u32(o+4))
-		pgc, err := parsePGC(r, at)
-		if err != nil {
-			return nil, err
+		if !r.ok(o, 8) {
+			diag = damaged(fmt.Sprintf("cut short after %d of %d rows", i, n))
+			break
+		}
+		cat, off := r.u32(o), r.u32(o+4)
+		pgc, known := seen[off]
+		isBad := false
+		if !known {
+			var note string
+			var err error
+			if bud.pgcs <= 0 {
+				err = fmt.Errorf("the disc lists more program chains than a disc can hold")
+			} else {
+				bud.pgcs--
+				pgc, note, err = parsePGC(r, r.rel(base, off), bud)
+			}
+			if err != nil {
+				pgc, note = emptyPGC(), plainIFOErr(err)
+				isBad = true
+			}
+			if note != "" {
+				bad++
+				if first == "" {
+					first = fmt.Sprintf("program chain %d: %s", i+1, note)
+				}
+			}
+			seen[off] = pgc
+			if isBad {
+				pgc.unreadable = true
+			}
 		}
 		out = append(out, PGCEntry{
 			Entry:        cat&0x80000000 != 0,
@@ -456,35 +586,48 @@ func parsePGCIT(r reader, base int) ([]PGCEntry, error) {
 			BlockMode:    int(cat>>22) & 3,
 			BlockType:    int(cat>>20) & 3,
 			ParentalMask: int(cat & 0xffff),
+			Damaged:      pgc.unreadable,
 			PGC:          pgc,
 		})
 	}
-	return out, nil
+	if bad > 0 && diag.state == tableOK {
+		diag = damaged(fmt.Sprintf("%d of %d program chains are damaged (%s)", bad, len(seen), first))
+	}
+	return out, diag
 }
 
-func parsePGCIUT(r reader, base int) []LangUnit {
-	if base == 0 || !r.ok(base, 8) {
-		return nil
+func parsePGCIUT(r reader, base int, bud *budget) ([]LangUnit, tableDiag) {
+	if !r.ok(base, 8) {
+		return nil, damaged("outside the file")
 	}
 	n := r.u16(base)
+	if n == 0 {
+		return nil, damaged("lists no language unit")
+	}
+	diag := tableDiag{state: tableOK}
 	var units []LangUnit
 	for i := 0; i < n && i < maxLangUnits; i++ {
 		o := base + 8 + i*8
 		if !r.ok(o, 8) {
+			diag = damaged("cut short")
 			break
 		}
 		lu := LangUnit{Language: langCode(r.bytes(o, 2)), Exists: r.u8(o + 3)}
-		pgcs, err := parsePGCIT(r, base+int(r.u32(o+4)))
-		if err == nil {
-			lu.PGCs = pgcs
+		pgcs, d := parsePGCIT(r, r.rel(base, r.u32(o+4)), bud)
+		lu.PGCs = pgcs
+		if d.state != tableOK && diag.state == tableOK {
+			diag = damaged(fmt.Sprintf("language unit %d: %s", i+1, d.note))
 		}
 		units = append(units, lu)
 	}
-	return units
+	return units, diag
 }
 
-// ParseVMG parses VIDEO_TS.IFO.
-func ParseVMG(b []byte) (*VMG, error) {
+// ParseVMG parses VIDEO_TS.IFO. It fails only when the file isn't a VMG at
+// all: a table that is missing or damaged is left empty.
+func ParseVMG(b []byte) (*VMG, error) { return parseVMG(b, newBudget()) }
+
+func parseVMG(b []byte, bud *budget) (*VMG, error) {
 	if len(b) < 0x200 || string(b[:12]) != "DVDVIDEO-VMG" {
 		return nil, fmt.Errorf("%w: not a VMG", ErrBadIFO)
 	}
@@ -495,27 +638,41 @@ func ParseVMG(b []byte) (*VMG, error) {
 		NumTitleSets: r.u16(0x3e),
 		Provider:     string(trimZero(r.bytes(0x40, 32))),
 		MenuVOBSec:   r.u32(0xc0),
+		diag:         ifoDiag{},
 	}
 	// The VMG is laid out as IFO, menu VOB, BUP: the menu VOB ends where the
 	// backup copy of the IFO (as long as the IFO) begins.
-	if last, ifoLast := r.u32(0x0c), r.u32(0x1c); v.MenuVOBSec != 0 && last > ifoLast+v.MenuVOBSec {
+	if last, ifoLast := r.u32(0x0c), r.u32(0x1c); v.MenuVOBSec != 0 && uint64(last) > uint64(ifoLast)+uint64(v.MenuVOBSec) {
 		v.MenuVOBSectors = last - ifoLast - v.MenuVOBSec
 	}
-	if sec := int(r.u32(0xcc)); sec != 0 {
-		v.Parental = parsePTLMAIT(r, sec*Sector)
+	if sec := r.u32(0xcc); sec != 0 {
+		v.Parental = parsePTLMAIT(r, r.sector(sec))
+		v.diag.set(tblPTLMAIT, len(v.Parental) > 0, "unreadable")
 	}
-	if fp := int(r.u32(0x84)); fp != 0 {
-		if pgc, err := parsePGC(r, fp); err == nil {
+	if fp := r.u32(0x84); fp != 0 {
+		pgc, note, err := parsePGC(r, r.rel(0, fp), bud)
+		if err == nil {
 			v.FirstPlay = pgc
+		} else {
+			note = plainIFOErr(err)
 		}
+		v.diag.set(tblFirstPlay, note == "", note)
 	}
 	// TT_SRPT
-	if sec := int(r.u32(0xc4)); sec != 0 {
-		base := sec * Sector
+	v.diag[tblTTSRPT] = damaged("missing")
+	if sec := r.u32(0xc4); sec != 0 {
+		base := r.sector(sec)
 		n := r.u16(base)
+		note := ""
+		if base < 0 {
+			note = "outside the file"
+		} else if n == 0 {
+			note = "lists no title"
+		}
 		for i := 0; i < n && i < 99; i++ {
 			o := base + 8 + i*12
 			if !r.ok(o, 12) {
+				note = "cut short"
 				break
 			}
 			v.Titles = append(v.Titles, TitleSearch{
@@ -529,9 +686,16 @@ func ParseVMG(b []byte) (*VMG, error) {
 				VTSSector: r.u32(o + 8),
 			})
 		}
+		v.diag.set(tblTTSRPT, note == "", note)
 	}
-	if sec := int(r.u32(0xc8)); sec != 0 {
-		v.Menus = parsePGCIUT(r, sec*Sector)
+	if sec := r.u32(0xc8); sec != 0 {
+		v.Menus, v.diag[tblVMGMPGCIUT] = parsePGCIUT(r, r.sector(sec), bud)
+	}
+	if sec := r.u32(0xd8); sec != 0 {
+		v.MenuCellAddrs, v.diag[tblVMGMCADT] = parseCADT(r, r.sector(sec))
+	}
+	if sec := r.u32(0xdc); sec != 0 {
+		v.menuVOBUs, v.diag[tblVMGMADMAP] = parseADMAP(r, r.sector(sec))
 	}
 	v.MenuVideo = parseVideoAttr(uint16(r.u16(0x100)))
 	for i := 0; i < r.u16(0x102) && i < 1; i++ {
@@ -543,53 +707,51 @@ func ParseVMG(b []byte) (*VMG, error) {
 	return v, nil
 }
 
-// ParseVTS parses VTS_xx_0.IFO.
-func ParseVTS(b []byte, number int) (*VTS, error) {
+// ParseVTS parses VTS_xx_0.IFO. It fails only when the file isn't a VTS at
+// all: a table that is missing or damaged is left empty, and Open then looks
+// for it in the backup copy.
+func ParseVTS(b []byte, number int) (*VTS, error) { return parseVTS(b, number, newBudget()) }
+
+func parseVTS(b []byte, number int, bud *budget) (*VTS, error) {
 	if len(b) < 0x300 || string(b[:12]) != "DVDVIDEO-VTS" {
 		return nil, fmt.Errorf("%w: not a VTS", ErrBadIFO)
 	}
 	r := reader{b}
-	v := &VTS{Number: number, Version: r.u8(0x20), MenuVOBSec: r.u32(0xc0), TitleVOBSec: r.u32(0xc4)}
+	v := &VTS{Number: number, Version: r.u8(0x20), MenuVOBSec: r.u32(0xc0), TitleVOBSec: r.u32(0xc4), diag: ifoDiag{}}
 	// A title set is laid out as IFO, menu VOB, title VOBs, BUP.
-	if last, ifoLast := r.u32(0x0c), r.u32(0x1c); v.TitleVOBSec != 0 && last > ifoLast+v.TitleVOBSec {
+	if last, ifoLast := r.u32(0x0c), r.u32(0x1c); v.TitleVOBSec != 0 && uint64(last) > uint64(ifoLast)+uint64(v.TitleVOBSec) {
 		v.TitleVOBSectors = last - ifoLast - v.TitleVOBSec
 		if v.MenuVOBSec != 0 && v.MenuVOBSec < v.TitleVOBSec {
 			v.MenuVOBSectors = v.TitleVOBSec - v.MenuVOBSec
 		}
 	}
 	// PTT_SRPT
-	if sec := int(r.u32(0xc8)); sec != 0 {
-		base := sec * Sector
-		n := r.u16(base)
-		last := base + int(r.u32(base+4)) + 1
-		if last > len(b) {
-			last = len(b)
-		}
-		offs := make([]int, 0, n)
-		for i := 0; i < n && i < 99; i++ {
-			offs = append(offs, base+int(r.u32(base+8+i*4)))
-		}
-		for i, start := range offs {
-			end := last
-			if i+1 < len(offs) {
-				end = offs[i+1]
-			}
-			var list []PTT
-			for o := start; o+4 <= end && len(list) < maxPTTEntries; o += 4 {
-				list = append(list, PTT{PGCN: r.u16(o), PGN: r.u16(o + 2)})
-			}
-			v.PTT = append(v.PTT, list)
-		}
+	v.diag[tblPTT] = damaged("missing")
+	if sec := r.u32(0xc8); sec != 0 {
+		v.PTT, v.diag[tblPTT] = parsePTT(r, r.sector(sec))
 	}
-	if sec := int(r.u32(0xcc)); sec != 0 {
-		pgcs, err := parsePGCIT(r, sec*Sector)
-		if err != nil {
-			return nil, err
-		}
-		v.PGCs = pgcs
+	v.diag[tblPGCIT] = damaged("missing")
+	if sec := r.u32(0xcc); sec != 0 {
+		v.PGCs, v.diag[tblPGCIT] = parsePGCIT(r, r.sector(sec), bud)
 	}
-	if sec := int(r.u32(0xd0)); sec != 0 {
-		v.Menus = parsePGCIUT(r, sec*Sector)
+	if sec := r.u32(0xd0); sec != 0 {
+		v.Menus, v.diag[tblVTSMPGCIUT] = parsePGCIUT(r, r.sector(sec), bud)
+	}
+	if sec := r.u32(0xd4); sec != 0 {
+		v.timeMaps, v.diag[tblTMAPTI] = parseTMAPTI(r, r.sector(sec))
+	}
+	if sec := r.u32(0xd8); sec != 0 {
+		v.MenuCellAddrs, v.diag[tblVTSMCADT] = parseCADT(r, r.sector(sec))
+	}
+	if sec := r.u32(0xdc); sec != 0 {
+		v.menuVOBUs, v.diag[tblVTSMADMAP] = parseADMAP(r, r.sector(sec))
+	}
+	if sec := r.u32(0xe0); sec != 0 {
+		v.CellAddrs, v.diag[tblCADT] = parseCADT(r, r.sector(sec))
+	}
+	if sec := r.u32(0xe4); sec != 0 {
+		v.vobus, v.diag[tblADMAP] = parseADMAP(r, r.sector(sec))
+		v.VOBUs = len(v.vobus)
 	}
 	v.MenuVideo = parseVideoAttr(uint16(r.u16(0x100)))
 	for i := 0; i < r.u16(0x102) && i < 1; i++ {
@@ -606,6 +768,60 @@ func ParseVTS(b []byte, number int) (*VTS, error) {
 		v.Subp = append(v.Subp, parseSubpAttr(r.bytes(0x256+i*6, 6)))
 	}
 	return v, nil
+}
+
+// parsePTT reads a title set's chapter table: per title, the PGC and program
+// each chapter starts at. A title whose list lies outside the table gets an
+// empty list, so title numbers stay what TT_SRPT expects.
+func parsePTT(r reader, base int) ([][]PTT, tableDiag) {
+	if !r.ok(base, 8) {
+		return nil, damaged("outside the file")
+	}
+	n := r.u16(base)
+	if n == 0 {
+		return nil, damaged("lists no title")
+	}
+	diag := tableDiag{state: tableOK}
+	if n > 99 {
+		n, diag = 99, damaged("lists more than 99 titles")
+	}
+	last := len(r.b)
+	if e := r.rel(base, r.u32(base+4)); e >= 0 && e+1 < last {
+		last = e + 1
+	}
+	head := 8 + 4*n
+	offs := make([]int, 0, n)
+	for i := 0; i < n; i++ {
+		at := -1
+		if o := base + 8 + i*4; r.ok(o, 4) {
+			if off := r.u32(o); int64(off) >= int64(head) {
+				at = r.rel(base, off)
+			}
+		}
+		if at < 0 || at+4 > last {
+			at = -1
+			diag = damaged(fmt.Sprintf("title %d's chapters lie outside the table", i+1))
+		}
+		offs = append(offs, at)
+	}
+	out := make([][]PTT, 0, n)
+	for _, start := range offs {
+		var list []PTT
+		if start >= 0 {
+			// The list runs to the next list that starts after it.
+			end := last
+			for _, o := range offs {
+				if o > start && o < end {
+					end = o
+				}
+			}
+			for o := start; o+4 <= end && len(list) < maxPTTEntries; o += 4 {
+				list = append(list, PTT{PGCN: r.u16(o), PGN: r.u16(o + 2)})
+			}
+		}
+		out = append(out, list)
+	}
+	return out, diag
 }
 
 // parsePTLMAIT parses the VMG parental management table: per country, eight
@@ -662,6 +878,9 @@ type Disc struct {
 	// IFOReports says, per index file, whether the IFO or its .BUP backup
 	// was used and why (filled by Open; empty for discs built by hand).
 	IFOReports []IFOReport
+	// Repairs lists where the disc's tables disagreed with each other, and
+	// what was mended from which table (filled by Open; see CrossCheck).
+	Repairs []Repair
 }
 
 // IFOReport is what reading one IFO and its backup found.
@@ -671,6 +890,9 @@ type IFOReport struct {
 	Used     string `json:"used"` // IFO or BUP
 	Mismatch bool   `json:"mismatch,omitempty"`
 	Note     string `json:"note,omitempty"`
+	// Tables says how each table read and which copy it was taken from: a
+	// table damaged in one copy is taken from the other.
+	Tables []TableReport `json:"tables,omitempty"`
 }
 
 // vobSectors is the size in sectors of the VOB a domain plays from, as the

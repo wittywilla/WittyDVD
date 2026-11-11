@@ -4,6 +4,7 @@
 package wittydvd
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/wittywilla/wittydisc/isofs"
 )
@@ -54,6 +56,7 @@ type Opened struct {
 	scans   map[scanKey]*MenuPicture
 	subs    map[subsKey]*CellSubs
 	ranges  map[rangesKey][]SectorRange
+	stats   readCounters
 }
 
 // scanKey identifies a menu scan whose result does not depend on viewer
@@ -100,7 +103,8 @@ func Open(p string) (*Opened, error) {
 // openSource reads the IFOs of an opened source. It closes the source when
 // the disc can't be read.
 func openSource(src Source, label, format string) (*Opened, error) {
-	vmg, rep, err := readIFO(src, "VIDEO_TS", ParseVMG, vmgProblems)
+	bud := newBudget()
+	vmg, rep, err := readIFO(src, "VIDEO_TS", vmgTables, func(b []byte) (*VMG, error) { return parseVMG(b, bud) })
 	if err != nil {
 		src.Close()
 		return nil, err
@@ -116,7 +120,7 @@ func openSource(src Source, label, format string) (*Opened, error) {
 		count = maxTitleSets
 	}
 	for n := 1; n <= count; n++ {
-		v, rep, err := readIFO(src, fmt.Sprintf("VTS_%02d_0", n), func(b []byte) (*VTS, error) { return ParseVTS(b, n) }, vtsProblems)
+		v, rep, err := readIFO(src, fmt.Sprintf("VTS_%02d_0", n), vtsTables, func(b []byte) (*VTS, error) { return parseVTS(b, n, bud) })
 		if err != nil {
 			continue
 		}
@@ -124,80 +128,130 @@ func openSource(src Source, label, format string) (*Opened, error) {
 		d.IFOReports = append(d.IFOReports, rep)
 		d.VTS[n] = v
 	}
+	d.Repairs = d.CrossCheck()
 	return &Opened{Disc: d, Source: src, Label: label, Format: format, spaces: map[Space][]FileExtent{}, readers: map[Space]*spaceReader{}, scans: map[scanKey]*MenuPicture{}}, nil
 }
 
-// readIFO reads and parses an IFO, falling back to its backup copy (.BUP)
-// when the IFO is missing, unreadable or does not parse: damaged discs and
-// images made from them often have a broken IFO and an intact backup, which
-// is what a player does too. When both parse but differ, the copy whose
-// tables hang together better (fewer problems) is used, the IFO on a tie.
-func readIFO[T any](src Source, base string, parse func([]byte) (T, error), problems func(T) int) (T, IFOReport, error) {
+// ifoFile is what readIFO needs of a parsed index file.
+type ifoFile interface {
+	comparable
+	tables() ifoDiag
+	problems() int
+	adopt(table string, from any)
+}
+
+// readIFO reads and parses an index file and its backup copy (.BUP), and
+// answers with the best of the two, table by table.
+//
+// Damaged discs and images made from them often have a broken IFO and an
+// intact backup, and a player reads the backup too. When only one copy can be
+// read, it is used. When both parse but differ, the copy whose tables hang
+// together better (fewer problems) is the base, the IFO on a tie. Then every
+// table that is missing or damaged in the base and whole in the other copy is
+// taken from the other copy: a scratch through one table of the IFO and
+// another table of the BUP still leaves a whole index.
+func readIFO[T ifoFile](src Source, base string, names []string, parse func([]byte) (T, error)) (T, IFOReport, error) {
 	var zero T
 	rep := IFOReport{Name: base, Used: "IFO"}
+	// A read that fails part-way still gives the tables before the fault.
 	b, err := src.ReadIFO(base + ".IFO")
 	var v T
 	ifoOK := false
-	if err == nil {
-		if v, err = parse(b); err == nil {
+	if err == nil || len(b) > 0 {
+		var perr error
+		if v, perr = parse(b); perr == nil {
 			ifoOK = true
+		} else if err == nil {
+			err = perr
 		}
 	}
 	bb, berr := src.ReadIFO(base + ".BUP")
-	if berr != nil {
-		if ifoOK {
-			return v, rep, nil
+	var bv T
+	bupOK := false
+	if berr == nil || len(bb) > 0 {
+		if x, perr := parse(bb); perr == nil {
+			bv, bupOK = x, true
+		}
+	}
+	report := func(v T, used, other string, adopted map[string]bool) {
+		d := v.tables()
+		for _, name := range names {
+			t, ok := d[name]
+			if !ok {
+				continue
+			}
+			from := used
+			if adopted[name] {
+				from = other
+			}
+			rep.Tables = append(rep.Tables, TableReport{Name: name, State: t.state.String(), From: from, Note: t.note})
+		}
+	}
+	switch {
+	case !ifoOK && !bupOK:
+		if err == nil {
+			err = berr
 		}
 		return zero, rep, fmt.Errorf("dvd: %s: %w", base, err)
-	}
-	bv, perr := parse(bb)
-	switch {
-	case ifoOK && perr != nil:
-		rep.Mismatch, rep.Note = true, "the backup doesn't parse"
+	case ifoOK && !bupOK:
+		if berr == nil {
+			rep.Mismatch, rep.Note = true, "the backup doesn't parse"
+		}
+		report(v, "IFO", "BUP", nil)
 		return v, rep, nil
-	case !ifoOK && perr == nil:
-		rep.Used, rep.Mismatch, rep.Note = "BUP", true, "the IFO is missing or damaged ("+plainIFOErr(err)+")"
-		return bv, rep, nil
 	case !ifoOK:
-		return zero, rep, fmt.Errorf("dvd: %s: %w", base, err)
+		rep.Used, rep.Mismatch, rep.Note = "BUP", true, "the IFO is missing or damaged ("+plainIFOErr(err)+")"
+		report(bv, "BUP", "IFO", nil)
+		return bv, rep, nil
 	}
-	if bytesEqual(b, bb) {
+	if bytes.Equal(b, bb) {
+		report(v, "IFO", "BUP", nil)
 		return v, rep, nil
 	}
 	rep.Mismatch = true
-	pi, pb := problems(v), problems(bv)
+	pi, pb := v.problems(), bv.problems()
+	use, other, usedName, otherName := v, bv, "IFO", "BUP"
 	if pb < pi {
+		use, other, usedName, otherName = bv, v, "BUP", "IFO"
 		rep.Used, rep.Note = "BUP", fmt.Sprintf("the IFO and its backup differ, and the backup's tables are consistent where the IFO's aren't (%d problems against %d)", pb, pi)
-		return bv, rep, nil
+	} else {
+		rep.Note = fmt.Sprintf("the IFO and its backup differ; the IFO is used (%d problems against the backup's %d)", pi, pb)
 	}
-	rep.Note = fmt.Sprintf("the IFO and its backup differ; the IFO is used (%d problems against the backup's %d)", pi, pb)
-	return v, rep, nil
-}
-
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
+	adopted := map[string]bool{}
+	var took []string
+	for _, name := range names {
+		if !use.tables().usable(name) && other.tables().usable(name) {
+			use.adopt(name, other)
+			adopted[name] = true
+			took = append(took, name)
 		}
 	}
-	return true
+	if len(took) > 0 {
+		rep.Note += fmt.Sprintf("; %s taken from the %s, where the %s's copy is missing or damaged", strings.Join(took, ", "), otherName, usedName)
+	}
+	report(use, usedName, otherName, adopted)
+	return use, rep, nil
 }
 
 func plainIFOErr(err error) string {
 	if err == nil {
 		return "unknown"
 	}
-	return strings.TrimPrefix(err.Error(), "dvd: ")
+	return strings.TrimPrefix(strings.TrimPrefix(err.Error(), "dvd: "), "malformed IFO: ")
 }
 
-// vmgProblems counts what doesn't hang together in a VMG.
-func vmgProblems(v *VMG) int {
+func (v *VMG) tables() ifoDiag { return v.diag }
+
+// problems counts what doesn't hang together in a VMG.
+func (v *VMG) problems() int {
 	n := 0
 	if len(v.Titles) == 0 {
 		n += 5
+	}
+	for _, t := range v.diag {
+		if t.state == tableDamaged {
+			n += 5
+		}
 	}
 	for _, t := range v.Titles {
 		if t.VTS < 1 || t.VTS > maxTitleSets || (v.NumTitleSets > 0 && t.VTS > v.NumTitleSets) || t.VTSTitle < 1 {
@@ -207,15 +261,47 @@ func vmgProblems(v *VMG) int {
 	return n
 }
 
-// vtsProblems counts what doesn't hang together in a VTS: missing tables,
-// chapters naming PGCs that don't exist, cells outside the title VOB.
-func vtsProblems(v *VTS) int {
+func (v *VMG) adopt(table string, from any) {
+	o := from.(*VMG)
+	switch table {
+	case tblTTSRPT:
+		v.Titles = o.Titles
+	case tblFirstPlay:
+		v.FirstPlay = o.FirstPlay
+	case tblPTLMAIT:
+		v.Parental = o.Parental
+	case tblVMGMPGCIUT:
+		v.Menus = o.Menus
+	case tblVMGMCADT:
+		v.MenuCellAddrs = o.MenuCellAddrs
+	case tblVMGMADMAP:
+		v.menuVOBUs = o.menuVOBUs
+	}
+	v.diag[table] = o.diag[table]
+	if v.NumTitleSets == 0 {
+		v.NumTitleSets = o.NumTitleSets
+	}
+	if v.MenuVOBSectors == 0 {
+		v.MenuVOBSec, v.MenuVOBSectors = o.MenuVOBSec, o.MenuVOBSectors
+	}
+}
+
+func (v *VTS) tables() ifoDiag { return v.diag }
+
+// problems counts what doesn't hang together in a VTS: missing or damaged
+// tables, chapters naming PGCs that don't exist, cells outside the title VOB.
+func (v *VTS) problems() int {
 	n := 0
 	if len(v.PGCs) == 0 {
 		n += 5
 	}
 	if len(v.PTT) == 0 {
 		n += 5
+	}
+	for _, t := range v.diag {
+		if t.state == tableDamaged {
+			n += 5
+		}
 	}
 	for _, list := range v.PTT {
 		for _, p := range list {
@@ -224,18 +310,53 @@ func vtsProblems(v *VTS) int {
 			}
 		}
 	}
+	done := map[*PGC]bool{}
 	for _, e := range v.PGCs {
-		if e.PGC == nil {
+		if e.PGC == nil || e.Damaged {
 			n++
 			continue
 		}
+		if done[e.PGC] {
+			continue
+		}
+		done[e.PGC] = true
 		for _, c := range e.PGC.Cells {
-			if c.LastSector < c.FirstSector || (v.TitleVOBSectors != 0 && c.FirstSector >= v.TitleVOBSectors) {
+			if badRange(c, v.TitleVOBSectors) {
 				n++
 			}
 		}
 	}
 	return n
+}
+
+func (v *VTS) adopt(table string, from any) {
+	o := from.(*VTS)
+	switch table {
+	case tblPTT:
+		v.PTT = o.PTT
+	case tblPGCIT:
+		v.PGCs = o.PGCs
+	case tblVTSMPGCIUT:
+		v.Menus = o.Menus
+	case tblTMAPTI:
+		v.timeMaps = o.timeMaps
+	case tblVTSMCADT:
+		v.MenuCellAddrs = o.MenuCellAddrs
+	case tblVTSMADMAP:
+		v.menuVOBUs = o.menuVOBUs
+	case tblCADT:
+		v.CellAddrs = o.CellAddrs
+	case tblADMAP:
+		v.vobus, v.VOBUs = o.vobus, o.VOBUs
+	}
+	v.diag[table] = o.diag[table]
+	// A header whose sizes were wiped along with the table's pointer.
+	if v.TitleVOBSectors == 0 {
+		v.TitleVOBSec, v.TitleVOBSectors = o.TitleVOBSec, o.TitleVOBSectors
+	}
+	if v.MenuVOBSectors == 0 {
+		v.MenuVOBSec, v.MenuVOBSectors = o.MenuVOBSec, o.MenuVOBSectors
+	}
 }
 
 // Close releases the reader file handles and the source.
@@ -324,7 +445,7 @@ func (o *Opened) Reader(sp Space) (SectorReader, error) {
 	if len(ext) == 0 {
 		return nil, errors.New("dvd: VOB missing")
 	}
-	r := &spaceReader{ext: ext, files: map[string]*os.File{}}
+	r := &spaceReader{ext: ext, files: map[string]blockFile{}, stats: &o.stats}
 	o.readers[sp] = r
 	return r, nil
 }
@@ -358,19 +479,55 @@ func (o *Opened) Menu(sp Space, first, last uint32, opt MenuScanOptions) (*MenuP
 	return pic.WithDefault(opt.NavButton), nil
 }
 
+// ReadStats counts what reading the VOBs of an opened disc has cost so far.
+type ReadStats struct {
+	// BadSectors is how many sectors could not be read and were handed on
+	// as zeros, the way a copying tool pads what a scratched disc won't give.
+	BadSectors int64 `json:"badSectors"`
+	// Retries is how many reads were tried again after a fault.
+	Retries int64 `json:"retries"`
+}
+
+// ReadStats says how many sectors have been unreadable so far.
+func (o *Opened) ReadStats() ReadStats {
+	return ReadStats{BadSectors: o.stats.bad.Load(), Retries: o.stats.retries.Load()}
+}
+
+type readCounters struct{ bad, retries atomic.Int64 }
+
+// blockFile is a VOB (or an image holding one) as the reader needs it.
+type blockFile interface {
+	io.ReaderAt
+	io.Closer
+}
+
+// openBlockFile opens a file of a VOB address space; tests put faults here.
+var openBlockFile = func(name string) (blockFile, error) { return os.Open(name) }
+
+const (
+	// readRetries is how often a failed read is tried again before its
+	// sectors are given up one by one.
+	readRetries = 2
+	// badRunLimit is how many unreadable sectors in a row are tried one by
+	// one. Past it the rest of the request is padded without trying: a drive
+	// can take seconds over each sector of a deliberately unreadable zone.
+	badRunLimit = 32
+)
+
 type spaceReader struct {
 	ext   []FileExtent
 	mu    sync.Mutex
-	files map[string]*os.File
+	files map[string]blockFile
+	stats *readCounters
 }
 
-func (r *spaceReader) file(name string) (*os.File, error) {
+func (r *spaceReader) file(name string) (blockFile, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if f, ok := r.files[name]; ok {
 		return f, nil
 	}
-	f, err := os.Open(name)
+	f, err := openBlockFile(name)
 	if err != nil {
 		return nil, err
 	}
@@ -378,27 +535,83 @@ func (r *spaceReader) file(name string) (*os.File, error) {
 	return f, nil
 }
 
+// ReadSectors reads count sectors from first. Reading past the end of the
+// VOB gives what there is. Sectors that can't be read (a scratch, or the
+// unreadable zones some discs carry on purpose) are tried again, then given
+// as zeros and counted: one bad sector never fails a read, and a zeroed
+// sector is no NAV pack, so whoever scans for one simply moves on.
 func (r *spaceReader) ReadSectors(first uint32, count int) ([]byte, error) {
+	if count <= 0 {
+		return nil, nil
+	}
 	want := int64(count) * Sector
 	parts := sliceExtents(r.ext, int64(first)*Sector, want)
-	out := make([]byte, want)
+	var have int64
+	for _, p := range parts {
+		have += p.Length
+	}
+	out := make([]byte, have)
 	got := 0
 	for _, p := range parts {
 		f, err := r.file(p.File)
 		if err != nil {
-			return nil, err
-		}
-		// Read straight into the result: no intermediate copy per extent.
-		n, err := f.ReadAt(out[got:got+int(p.Length)], p.Offset)
-		got += n
-		if err != nil && !errors.Is(err, io.EOF) {
+			if got == 0 {
+				return nil, err
+			}
 			return out[:got], err
 		}
+		// Read straight into the result: no intermediate copy per extent.
+		n := r.readTolerant(f, out[got:got+int(p.Length)], p.Offset)
+		got += n
 		if int64(n) < p.Length {
-			break
+			break // the file is shorter than its directory entry says
 		}
 	}
 	return out[:got], nil
+}
+
+// readTolerant fills buf from off and returns how much of it holds data or
+// padding; less than len(buf) only at the end of the file.
+func (r *spaceReader) readTolerant(f blockFile, buf []byte, off int64) int {
+	n, err := f.ReadAt(buf, off)
+	if err == nil || errors.Is(err, io.EOF) {
+		return n
+	}
+	for try := 0; try < readRetries; try++ {
+		r.count(0, 1)
+		if n, err = f.ReadAt(buf, off); err == nil || errors.Is(err, io.EOF) {
+			return n
+		}
+	}
+	// Sector by sector: keep what reads, pad what doesn't.
+	run := 0
+	for at := 0; at < len(buf); at += Sector {
+		end := min(at+Sector, len(buf))
+		if run >= badRunLimit {
+			clear(buf[at:])
+			r.count(int64((len(buf)-at+Sector-1)/Sector), 0)
+			break
+		}
+		k, err := f.ReadAt(buf[at:end], off+int64(at))
+		if errors.Is(err, io.EOF) {
+			return at + k
+		}
+		if err != nil {
+			clear(buf[at:end])
+			r.count(1, 0)
+			run++
+			continue
+		}
+		run = 0
+	}
+	return len(buf)
+}
+
+func (r *spaceReader) count(bad, retries int64) {
+	if r.stats != nil {
+		r.stats.bad.Add(bad)
+		r.stats.retries.Add(retries)
+	}
 }
 
 // Close releases file handles held by the reader.
@@ -408,7 +621,7 @@ func (r *spaceReader) Close() {
 	for _, f := range r.files {
 		f.Close()
 	}
-	r.files = map[string]*os.File{}
+	r.files = map[string]blockFile{}
 }
 
 // ---------------------------------------------------------------------------
@@ -457,31 +670,60 @@ func (s *imageSource) VOBExtents(sp Space) ([]FileExtent, error) {
 	return out, nil
 }
 
-type folderSource struct{ dir string }
+type folderSource struct {
+	dir string
 
+	once  sync.Once
+	names map[string]string // upper-cased name -> name on disk
+}
+
+// openFolder opens a VIDEO_TS folder: the folder itself, whatever it is
+// called, when it holds VIDEO_TS.IFO or its backup, or else the VIDEO_TS
+// folder inside it. Names are matched without regard to case, as copies made
+// on other systems come out in lower case.
 func openFolder(p string) (Source, error) {
-	dir := p
-	if strings.ToUpper(filepath.Base(p)) != "VIDEO_TS" {
-		dir = filepath.Join(p, "VIDEO_TS")
+	holds := func(dir string) bool {
+		s := &folderSource{dir: dir}
+		_, ifo := s.find("VIDEO_TS.IFO")
+		_, bup := s.find("VIDEO_TS.BUP")
+		return ifo || bup
 	}
-	if _, err := os.Stat(dir); err != nil {
-		return nil, fmt.Errorf("dvd: no VIDEO_TS folder in %s", p)
+	if holds(p) {
+		return &folderSource{dir: p}, nil
 	}
-	return &folderSource{dir: dir}, nil
+	entries, _ := os.ReadDir(p)
+	for _, e := range entries {
+		if e.IsDir() && strings.EqualFold(e.Name(), "VIDEO_TS") {
+			return &folderSource{dir: filepath.Join(p, e.Name())}, nil
+		}
+	}
+	if strings.EqualFold(filepath.Base(p), "VIDEO_TS") {
+		return &folderSource{dir: p}, nil
+	}
+	return nil, fmt.Errorf("dvd: no VIDEO_TS folder in %s", p)
 }
 
 func (s *folderSource) Describe() string { return s.dir }
 func (s *folderSource) Close() error     { return nil }
 
+// find looks a file up without regard to case. The folder is listed once: a
+// disc's files don't change while it is open, and a disc of 99 title sets
+// asks for a thousand names.
 func (s *folderSource) find(name string) (string, bool) {
-	entries, err := os.ReadDir(s.dir)
-	if err != nil {
-		return "", false
-	}
-	for _, e := range entries {
-		if strings.EqualFold(e.Name(), name) {
-			return filepath.Join(s.dir, e.Name()), true
+	s.once.Do(func() {
+		s.names = map[string]string{}
+		entries, err := os.ReadDir(s.dir)
+		if err != nil {
+			return
 		}
+		for _, e := range entries {
+			if k := strings.ToUpper(e.Name()); s.names[k] == "" {
+				s.names[k] = e.Name()
+			}
+		}
+	})
+	if n, ok := s.names[strings.ToUpper(name)]; ok {
+		return filepath.Join(s.dir, n), true
 	}
 	return "", false
 }
