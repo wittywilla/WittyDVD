@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
@@ -21,7 +22,7 @@ import (
 // DVD runs the dvd subcommands: info, walk, crawl, pgc, render.
 func DVD(args []string) int {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: dvd info|walk|crawl|pgc|render <image> [args]")
+		fmt.Fprintln(os.Stderr, "usage: dvd info|rank|walk|crawl|pgc|render <image> [args]")
 		return 2
 	}
 	o, err := wittydvd.Open(args[1])
@@ -33,6 +34,22 @@ func DVD(args []string) int {
 	switch args[0] {
 	case "info":
 		return dvdInfo(o)
+	case "rank":
+		r := o.Analyze()
+		if len(args) > 2 && args[2] == "json" {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(r); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return 0
+		}
+		fmt.Print(r.Explain())
+		for _, rep := range o.Disc.Repairs {
+			fmt.Printf("Table check: %s (%s)\n", rep.Note, rep.Table)
+		}
+		return 0
 	case "walk":
 		return dvdWalk(o, args[2:])
 	case "crawl":

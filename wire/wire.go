@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -37,6 +38,16 @@ const (
 	MethodSubs  = "subs"  // CellCall; answers a cell's sub-pictures
 	MethodRuns  = "runs"  // RunsCall; answers a title's runs
 	MethodSPU   = "spu"   // SPUCall; answers a sub-picture's frames
+
+	// MethodAnalyze answers the title ranking of the open disc as JSON
+	// (wittydvd.Ranking): the main title with its confidence and evidence,
+	// the feature's playlist, episodes, decoys and versions. It reads the
+	// menus' NAV packs for their buttons, never the video. A helper older
+	// than this call refuses it with CodeUnknownCall.
+	MethodAnalyze = "analyze"
+	// MethodReadStats answers how many unreadable sectors have been padded
+	// so far, as JSON (wittydvd.ReadStats).
+	MethodReadStats = "readStats"
 
 	// Navigator calls take a NavCall and answer a NavAnswer.
 	MethodStart     = "start"
@@ -76,6 +87,7 @@ const (
 	maxPGCAnswer     = 1 << 20
 	maxExtentsAnswer = 8 << 20
 	maxDiscAnswer    = 16 << 20
+	maxRankingAnswer = 4 << 20
 	maxPictureSide   = 4096
 )
 
@@ -187,6 +199,29 @@ func decode(b []byte, limit int, what string, v any) (err error) {
 		return fmt.Errorf("the helper's %s is unreadable: %w", what, err)
 	}
 	return nil
+}
+
+// DecodeRanking reads the answer to MethodAnalyze. What it says is a
+// helper's opinion: the server checks title numbers against the disc.
+func DecodeRanking(b []byte) (*wittydvd.Ranking, error) {
+	if len(b) > maxRankingAnswer {
+		return nil, fmt.Errorf("the helper's ranking is too large: %d bytes", len(b))
+	}
+	var r wittydvd.Ranking
+	if err := json.Unmarshal(b, &r); err != nil {
+		return nil, fmt.Errorf("the helper's ranking is unreadable: %w", err)
+	}
+	return &r, nil
+}
+
+// DecodeReadStats reads the answer to MethodReadStats.
+func DecodeReadStats(b []byte) (wittydvd.ReadStats, error) {
+	var s wittydvd.ReadStats
+	if len(b) > 1<<10 {
+		return s, errors.New("the helper's read statistics are too large")
+	}
+	err := json.Unmarshal(b, &s)
+	return s, err
 }
 
 // DecodeNav reads a NavAnswer.

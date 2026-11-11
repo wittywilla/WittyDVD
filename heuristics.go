@@ -486,6 +486,7 @@ func (d *Disc) firstPlayTarget(length func(int) float64, fuel *int64) (target in
 		}
 	}()
 	nav := NewNav(d, NavOptions{RegisterOptions: RegisterOptions{Rand: deterministicRand()}})
+	nav.lean = true
 	nav.st.regs.fuel = fuel
 	st := nav.Start()
 	nav.st.regs.fuel = fuel // Start makes a fresh register file
@@ -655,7 +656,7 @@ func (a *analysis) title(number int) *feat {
 		f.whole = true
 		return f
 	}
-	p := a.d.playedTitle(number, RegisterOptions{}, &a.fuel)
+	p := a.d.playedTitle(number, RegisterOptions{}, &a.fuel, len(ts.Cells)+8)
 	if p == nil {
 		return f
 	}

@@ -37,7 +37,7 @@ func main() {
 		switch os.Args[1] {
 		case "disc":
 			os.Exit(cli.Disc(os.Args[2:]))
-		case "info", "walk", "crawl", "pgc", "render":
+		case "info", "rank", "walk", "crawl", "pgc", "render":
 			os.Exit(cli.DVD(os.Args[1:]))
 		case "version", "--version", "-v":
 			fmt.Println("wittydvd", version)
@@ -47,6 +47,7 @@ func main() {
 	fmt.Fprint(os.Stderr, `wittydvd `+version+`: inspect DVD-Video images and VIDEO_TS folders
 
   wittydvd info    <image>              titles, menus, languages, first-play program
+  wittydvd rank    <image> [json]       which title is the film, the episodes and decoys, and why
   wittydvd walk    <image> [button...]  simulate inserting the disc and pressing buttons
   wittydvd crawl   <image>              press every button of every menu; report dead ends
   wittydvd pgc     <image> <domain> <vts> <pgcn>   the commands of one program chain

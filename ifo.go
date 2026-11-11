@@ -443,6 +443,7 @@ func parsePGC(r reader, base int, bud *budget) (*PGC, string, error) {
 	cellPosOff := r.u16(base + 0xea)
 
 	if progOff != 0 {
+		p.Programs = make([]int, 0, min(nPrograms, max(len(r.b)-base-progOff, 0)))
 		for i := 0; i < nPrograms; i++ {
 			if !r.ok(base+progOff+i, 1) {
 				damage = "program map cut short"
@@ -452,6 +453,8 @@ func parsePGC(r reader, base int, bud *budget) (*PGC, string, error) {
 		}
 	}
 	if cellPbOff != 0 {
+		// Room for the cells the table can really hold, not for what it claims.
+		p.Cells = make([]Cell, 0, min(nCells, maxCellsPerPGC, max(len(r.b)-base-cellPbOff, 0)/24, max(bud.cells, 0)))
 		for i := 0; i < nCells && i < maxCellsPerPGC; i++ {
 			o := base + cellPbOff + i*24
 			if !r.ok(o, 24) {

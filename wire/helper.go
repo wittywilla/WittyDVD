@@ -90,6 +90,10 @@ func (h *Helper) answer(method string, params json.RawMessage) ([]byte, error) {
 		return nil, refuse(CodeBadCall, "no disc is open")
 	}
 	switch method {
+	case MethodAnalyze:
+		return json.Marshal(h.opened.Analyze())
+	case MethodReadStats:
+		return json.Marshal(h.opened.ReadStats())
 	case MethodNav:
 		var o NavOptions
 		if err := json.Unmarshal(params, &o); err != nil {

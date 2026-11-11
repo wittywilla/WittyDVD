@@ -91,15 +91,17 @@ func (n navAt) pack() []byte {
 // navsOf lists the VOBU starts of a VOB: one per piece of every listed cell.
 func navsOf(pgcs []fxPGC, ids cellIDs, size uint32) []navAt {
 	var out []navAt
-	seen := map[cellRange]bool{}
+	seen := map[[4]int]bool{}
 	for _, p := range pgcs {
 		for i, c := range p.cells {
 			k := cellRange{c.first, c.last}
-			if seen[k] || !c.listed(size) {
+			vob, id := ids.of(c, i)
+			// Cells of an angle block share their sectors and differ in id.
+			key := [4]int{int(c.first), int(c.last), vob, id}
+			if seen[key] || !c.listed(size) {
 				continue
 			}
-			seen[k] = true
-			vob, id := ids.of(c, i)
+			seen[key] = true
 			pieces := c.pieces
 			if pieces == nil {
 				pieces = []cellRange{k}

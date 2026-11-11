@@ -60,6 +60,9 @@ type Opened struct {
 
 	rankOnce sync.Once
 	rank     *Ranking
+
+	// vobReader, when set, stands in for the VOB files (tests).
+	vobReader func(Space) (SectorReader, error)
 }
 
 // scanKey identifies a menu scan whose result does not depend on viewer
@@ -171,7 +174,9 @@ func readIFO[T ifoFile](src Source, base string, names []string, parse func([]by
 	bb, berr := src.ReadIFO(base + ".BUP")
 	var bv T
 	bupOK := false
-	if berr == nil || len(bb) > 0 {
+	// Two copies with the same bytes say the same thing: parse one.
+	same := ifoOK && err == nil && berr == nil && bytes.Equal(b, bb)
+	if !same && (berr == nil || len(bb) > 0) {
 		if x, perr := parse(bb); perr == nil {
 			bv, bupOK = x, true
 		}
@@ -191,6 +196,9 @@ func readIFO[T ifoFile](src Source, base string, names []string, parse func([]by
 		}
 	}
 	switch {
+	case same:
+		report(v, "IFO", "BUP", nil)
+		return v, rep, nil
 	case !ifoOK && !bupOK:
 		if err == nil {
 			err = berr
@@ -206,10 +214,6 @@ func readIFO[T ifoFile](src Source, base string, names []string, parse func([]by
 		rep.Used, rep.Mismatch, rep.Note = "BUP", true, "the IFO is missing or damaged ("+plainIFOErr(err)+")"
 		report(bv, "BUP", "IFO", nil)
 		return bv, rep, nil
-	}
-	if bytes.Equal(b, bb) {
-		report(v, "IFO", "BUP", nil)
-		return v, rep, nil
 	}
 	rep.Mismatch = true
 	pi, pb := v.problems(), bv.problems()
@@ -436,6 +440,9 @@ func sliceExtents(all []FileExtent, off, length int64) []FileExtent {
 // Reader returns a SectorReader over a space. Readers are shared and keep
 // their file handles open until the disc is closed.
 func (o *Opened) Reader(sp Space) (SectorReader, error) {
+	if o.vobReader != nil {
+		return o.vobReader(sp)
+	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if r, ok := o.readers[sp]; ok {

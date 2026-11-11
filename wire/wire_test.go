@@ -7,6 +7,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/wittywilla/wittydvd"
@@ -197,6 +199,97 @@ func TestHelperNeedsADisc(t *testing.T) {
 	}
 }
 
+// tinyDisc writes the index files of a disc with one title of one program
+// chain, by hand: two films' worth of bytes would tell this test no more.
+func tinyDisc(t *testing.T) string {
+	t.Helper()
+	be16, be32 := binary.BigEndian.PutUint16, binary.BigEndian.PutUint32
+	vmg := make([]byte, 2*2048)
+	copy(vmg, "DVDVIDEO-VMG")
+	be32(vmg[0x0c:], 3)
+	be32(vmg[0x1c:], 1)
+	be16(vmg[0x3e:], 1)
+	be32(vmg[0xc4:], 1) // TT_SRPT
+	tt := vmg[2048:]
+	be16(tt, 1)
+	be32(tt[4:], 19)
+	tt[8+1], tt[8+3], tt[8+6], tt[8+7] = 1, 1, 1, 1 // one angle, one chapter, title set 1, title 1
+
+	vts := make([]byte, 3*2048)
+	copy(vts, "DVDVIDEO-VTS")
+	be32(vts[0x0c:], 3+50000+2)
+	be32(vts[0x1c:], 2)
+	be32(vts[0xc4:], 3) // title VOBs
+	be32(vts[0xc8:], 1) // VTS_PTT_SRPT
+	be32(vts[0xcc:], 2) // VTS_PGCIT
+	ptt := vts[2048:]
+	be16(ptt, 1)
+	be32(ptt[4:], 15)
+	be32(ptt[8:], 12)
+	be16(ptt[12:], 1)
+	be16(ptt[14:], 1)
+	it := vts[2*2048:]
+	be16(it, 1)
+	be32(it[8:], 0x81<<24)
+	be32(it[12:], 16)
+	pgc := it[16:]
+	pgc[2], pgc[3] = 1, 1
+	copy(pgc[4:], []byte{0x01, 0x30, 0x00, 0x40}) // 1:30:00
+	be16(pgc[0xe6:], 0xec)
+	be16(pgc[0xe8:], 0xee)
+	be16(pgc[0xea:], 0xee+24)
+	pgc[0xec] = 1
+	cell := pgc[0xee:]
+	copy(cell[4:], []byte{0x01, 0x30, 0x00, 0x40})
+	be32(cell[8:], 0)
+	be32(cell[20:], 49999)
+	be16(cell[24:], 1)
+	cell[27] = 1
+
+	dir := filepath.Join(t.TempDir(), "VIDEO_TS")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, b := range map[string][]byte{"VIDEO_TS.IFO": vmg, "VIDEO_TS.BUP": vmg, "VTS_01_0.IFO": vts, "VTS_01_0.BUP": vts} {
+		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// The ranking and the read statistics travel as JSON, and say what the
+// engine itself says.
+func TestAnalyzeCall(t *testing.T) {
+	h := new(Helper)
+	defer h.Close()
+	params, _ := json.Marshal(OpenParams{Path: tinyDisc(t)})
+	if _, _, err := h.Handle(MethodOpen, params); err != nil {
+		t.Fatal(err)
+	}
+	_, blob, err := h.Handle(MethodAnalyze, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := DecodeRanking(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Main != 1 || r.Why == nil || r.Why.Summary == "" || r.Feature == nil || r.Feature.Duration != 5400 || len(r.Candidates) != 1 || len(r.Candidates[0].Evidence) == 0 {
+		t.Fatalf("ranking over the wire: %s", blob)
+	}
+	_, blob, err = h.Handle(MethodReadStats, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st, err := DecodeReadStats(blob); err != nil || st.BadSectors != 0 {
+		t.Fatalf("read stats %+v, %v", st, err)
+	}
+	if _, err := DecodeRanking(make([]byte, maxRankingAnswer+1)); err == nil {
+		t.Fatal("a ranking over the limit was read")
+	}
+}
+
 // Whatever a fork sends, the server gets an answer or an error.
 func FuzzDecode(f *testing.F) {
 	st, _ := Encode(&NavAnswer{Step: &wittydvd.Step{Kind: wittydvd.StepMenu, Title: &wittydvd.TitleInfo{}}})
@@ -213,5 +306,7 @@ func FuzzDecode(f *testing.F) {
 		_, _ = DecodeExtents(b)
 		_, _ = DecodeMenu(b)
 		_, _ = DecodeSubs(b)
+		_, _ = DecodeRanking(b)
+		_, _ = DecodeReadStats(b)
 	})
 }

@@ -65,6 +65,7 @@ func check(ctx context.Context, j *Job, src *discSource, o DiscOptions, res *Res
 		main = d.Disc.MainTitle()
 		dvdStructure(j, d, titles, main)
 	})
+	j.Engine("checking the tables against each other", func() { dvdTables(j, d) })
 	if !menusScrambled {
 		j.Engine("ranking the titles", func() { dvdRanking(j, d, main) })
 	} else {
@@ -455,6 +456,49 @@ func dvdStructure(j *Job, d *wittydvd.Opened, titles []wittydvd.TitleSummary, ma
 	}
 }
 
+// dvdTables reports which copy of each index file was read, the tables that
+// were taken from the other copy, what the cross-checks mended, and the
+// sectors that couldn't be read.
+func dvdTables(j *Job, d *wittydvd.Opened) {
+	var det []string
+	sev := SevInfo
+	for _, rep := range d.Disc.IFOReports {
+		if !rep.Mismatch {
+			continue
+		}
+		det = append(det, fmt.Sprintf("%s: read from the %s. %s", rep.Name, rep.Used, rep.Note))
+		for _, t := range rep.Tables {
+			if t.State != "ok" {
+				sev = SevWarn
+				det = append(det, fmt.Sprintf("    %s is %s in both copies (%s)", t.Name, t.State, t.Note))
+			}
+		}
+	}
+	for _, r := range d.Disc.Repairs {
+		did := "Noted"
+		if r.Fixed {
+			did = "Mended"
+			if r.From != "" {
+				did += " from " + r.From
+			}
+		}
+		where := "the disc"
+		if r.VTS != 0 {
+			where = fmt.Sprintf("title set %d", r.VTS)
+		}
+		det = append(det, fmt.Sprintf("%s, %s (%s): %s", did, where, r.Table, r.Note))
+	}
+	if st := d.ReadStats(); st.BadSectors > 0 {
+		sev = SevWarn
+		det = append(det, fmt.Sprintf("%s couldn't be read and %s passed on as zeros.", plural(int(st.BadSectors), "sector", "sectors"), map[bool]string{true: "was", false: "were"}[st.BadSectors == 1]))
+	}
+	if len(det) == 0 {
+		return
+	}
+	l, more := clip(det, len(det), 40)
+	j.Add(Finding{Severity: sev, Title: "The disc's index needed mending", What: "A DVD keeps its index twice and says most things in more than one table. Where the copies or the tables disagreed, the ones that agree with the rest were used.", Details: l, More: more})
+}
+
 // dvdRanking reports how the title scoring engine ranks the titles, with the
 // menus' own Play button when they can be read (NAV packs only: nothing is
 // decrypted).
@@ -488,7 +532,18 @@ func dvdRankingReport(j *Job, r *wittydvd.Ranking, main *wittydvd.TitleSummary) 
 		}
 		det = append(det, "Episodes in viewing order: "+strings.Join(list, ", "))
 	}
-	what := fmt.Sprintf("Every title is scored from the disc's index, its first-play program and, when they can be read, its first menu's buttons. Title %d scored best.", r.Main)
+	if w := r.Why; w != nil {
+		det = append([]string{fmt.Sprintf("Confidence: %.0f%% (%s). %s", 100*w.Confidence, w.Level, w.Summary)}, det...)
+	}
+	for _, d := range r.Decisions {
+		if d.Kind != "main" {
+			det = append(det, fmt.Sprintf("Decided (%s, %.0f%% sure): %s", d.Kind, 100*d.Confidence, d.Summary))
+		}
+	}
+	for _, v := range r.Versions {
+		det = append(det, fmt.Sprintf("Version: %s, %s", v.Label, hms(v.Duration)))
+	}
+	what := fmt.Sprintf("Every title is scored from the disc's index, its own commands and, when they can be read, its menus' buttons. Title %d scored best.", r.Main)
 	if main != nil && main.Number != r.Main {
 		what += fmt.Sprintf(" From the index alone (what Play movie uses) the pick is title %d.", main.Number)
 	}

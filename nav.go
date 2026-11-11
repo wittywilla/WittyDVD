@@ -141,6 +141,10 @@ type Nav struct {
 	Disc *Disc
 	opts NavOptions
 	st   *navState
+	// lean is set for the dry runs of the title analysis, which step through
+	// thousands of cells and want only where each step is: title steps then
+	// come without their list of cells and without the loop check.
+	lean bool
 }
 
 // NewNav creates a navigator over parsed IFOs.
@@ -160,7 +164,7 @@ func (n *Nav) fresh() *navState {
 
 // Clone returns an independent navigator in the same state, for what-if exploration.
 func (n *Nav) Clone() *Nav {
-	return &Nav{Disc: n.Disc, opts: n.opts, st: n.st.clone()}
+	return &Nav{Disc: n.Disc, opts: n.opts, st: n.st.clone(), lean: n.lean}
 }
 
 // Registers exposes the live register file (read-only use recommended).
@@ -470,10 +474,14 @@ func (n *Nav) present(s *navState, resumed bool, sim bool) *Step {
 	}
 	if s.domain == DomainVTS {
 		st.Kind = StepTitle
-		st.Title = n.titleInfo(s, p)
+		if n.lean {
+			st.Title = &TitleInfo{TTN: int(s.regs.SPRM[SprmTTN]), VTSTTN: int(s.regs.SPRM[SprmVTSTTN]), PTTN: int(s.regs.SPRM[SprmPTTN])}
+		} else {
+			st.Title = n.titleInfo(s, p)
+		}
 	}
 	s.current = st
-	if !sim {
+	if !sim && !(n.lean && st.Kind == StepTitle) {
 		st.Loop = n.loops(s, st)
 	}
 	return st

@@ -329,7 +329,7 @@ func (a *analysis) versions() {
 		if main.ts.Path != "commands" && ro.Parental == 0 {
 			return a.d.TitleAngle(r.Main, max(ro.Angle, 1))
 		}
-		if p := a.d.playedTitle(r.Main, ro, &a.fuel); p != nil {
+		if p := a.d.playedTitle(r.Main, ro, &a.fuel, len(main.ts.Cells)+8); p != nil {
 			return p.ts
 		}
 		return nil

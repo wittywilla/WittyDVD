@@ -41,13 +41,20 @@ func (d *Disc) TitleAngle(number, angle int) *TitleSummary {
 	}
 	// Walk PGCs starting from the first chapter's PGC, following next_pgcn
 	// (or, without one, the next PGC the chapter table names).
+	var chain []int
+	cells := 0
 	seen := map[int]bool{}
 	for pgcn := ptts[0].PGCN; pgcn >= 1 && pgcn <= len(v.PGCs) && !seen[pgcn]; pgcn = nextTitlePGC(v, t.VTSTitle, pgcn) {
-		if len(seen) >= maxTitlePGCs {
+		if len(chain) >= maxTitlePGCs {
 			ts.Truncated = true
 			break
 		}
 		seen[pgcn] = true
+		chain = append(chain, pgcn)
+		cells += len(v.PGCs[pgcn-1].PGC.Cells)
+	}
+	ts.Cells = make([]TitleCell, 0, min(cells, maxTitleCells))
+	for _, pgcn := range chain {
 		p := v.PGCs[pgcn-1].PGC
 		for n := 1; n >= 1 && n <= len(p.Cells); n = nextCellN(p, n) {
 			if len(ts.Cells) >= maxTitleCells {
@@ -220,7 +227,7 @@ type played struct {
 // who picked it would, and notes every cell shown until the disc leaves the
 // title. Random numbers are fixed, so the answer is the same every time.
 // Nothing is read from the VOBs.
-func (d *Disc) playedTitle(number int, ro RegisterOptions, fuel *int64) (out *played) {
+func (d *Disc) playedTitle(number int, ro RegisterOptions, fuel *int64, hint int) (out *played) {
 	if number < 1 || number > len(d.VMG.Titles) {
 		return nil
 	}
@@ -240,11 +247,13 @@ func (d *Disc) playedTitle(number int, ro RegisterOptions, fuel *int64) (out *pl
 		ro.Rand = deterministicRand()
 	}
 	nav := NewNav(d, NavOptions{RegisterOptions: ro})
+	nav.lean = true
 	nav.st.regs.fuel = fuel
 	ts := &TitleSummary{Number: number, VTS: t.VTS, VTSTitle: t.VTSTitle, Angles: t.Angles, Audio: v.Audio, Subp: v.Subp, Video: v.Video, Path: "commands"}
 	res := &played{ts: ts}
 	type at struct{ pgcn, cell int }
 	seen := map[at]bool{}
+	ts.Cells = make([]TitleCell, 0, min(hint, maxTitleCells))
 	st := nav.PlayTitle(number, 1)
 	for {
 		if st == nil || st.Kind != StepTitle || st.Title == nil || st.VTS != t.VTS {
