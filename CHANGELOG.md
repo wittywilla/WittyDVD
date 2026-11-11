@@ -16,6 +16,7 @@ What changed in WittyDVD, newest first. What changed before it had a repository 
 - **Unreadable sectors** are tried again, then passed on as zeros and counted (`Opened.ReadStats`). An interleaved cell carries on from its next VOBU.
 - **Folders:** a `VIDEO_TS` folder is found whatever case its name is in, and a folder that holds the index files directly is opened.
 - **Limits:** every table read is bounds-checked without overflow on 32-bit builds, and one budget bounds the program chains and cells of a whole disc. A PGCIT may hold 8192 rows (it was 1000), and rows that point at the same chain share it. A disc of 99 titles and 2941 program chains opens in about 17 ms and ranks in about 65 ms.
+- **Fixed:** a time field whose bytes aren't decimal digits, as junk cells' often are, read as up to 165 hours, and a server refuses a whole disc for one such cell. It now reads as at most 99:59:59. One `ReadSectors` call returns at most 64 MiB.
 - **For servers:** the helper answers `analyze` with the ranking as JSON and `readStats` with the sectors padded. Both are new calls; nothing else on the wire changed, and the new fields of the disc's structure are ignored by an older server.
 - The diagnose report ranks the titles with their confidence and reasons, lists what was mended in the index, and warns about structure-protection decoys.
 - None of this bypasses CSS. Scrambled discs are still refused, nothing is decrypted, and no decryption library is linked or loaded. See `docs/QUIRKS.md`.

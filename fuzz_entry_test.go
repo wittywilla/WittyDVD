@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"math"
 	"math/rand"
+	"os"
+	"strconv"
 	"testing"
 	"testing/fstest"
 )
@@ -312,6 +314,10 @@ func TestScratchedIndexFiles(t *testing.T) {
 	rounds := 40
 	if testing.Short() {
 		rounds = 5
+	}
+	// WITTYDVD_SCRATCH_ROUNDS=5000 makes a soak test of it.
+	if n, err := strconv.Atoi(os.Getenv("WITTYDVD_SCRATCH_ROUNDS")); err == nil && n > 0 {
+		rounds = n
 	}
 	for _, d := range seedDiscs() {
 		good := d.files()
