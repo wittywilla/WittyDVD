@@ -4,10 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 
@@ -93,12 +91,18 @@ func Open(p string) (*Opened, error) {
 	if err != nil {
 		return nil, err
 	}
-	vmg, err := readIFO(src, "VIDEO_TS", ParseVMG)
+	return openSource(src, label, format)
+}
+
+// openSource reads the IFOs of an opened source. It closes the source when
+// the disc can't be read.
+func openSource(src Source, label, format string) (*Opened, error) {
+	vmg, rep, err := readIFO(src, "VIDEO_TS", ParseVMG, vmgProblems)
 	if err != nil {
 		src.Close()
 		return nil, err
 	}
-	d := &Disc{VMG: vmg, VTS: map[int]*VTS{}}
+	d := &Disc{VMG: vmg, VTS: map[int]*VTS{}, IFOReports: []IFOReport{rep}}
 	count := vmg.NumTitleSets
 	for _, t := range vmg.Titles {
 		if t.VTS > count {
@@ -109,10 +113,12 @@ func Open(p string) (*Opened, error) {
 		count = maxTitleSets
 	}
 	for n := 1; n <= count; n++ {
-		v, err := readIFO(src, fmt.Sprintf("VTS_%02d_0", n), func(b []byte) (*VTS, error) { return ParseVTS(b, n) })
+		v, rep, err := readIFO(src, fmt.Sprintf("VTS_%02d_0", n), func(b []byte) (*VTS, error) { return ParseVTS(b, n) }, vtsProblems)
 		if err != nil {
 			continue
 		}
+		rep.VTS = n
+		d.IFOReports = append(d.IFOReports, rep)
 		d.VTS[n] = v
 	}
 	return &Opened{Disc: d, Source: src, Label: label, Format: format, spaces: map[Space][]FileExtent{}, readers: map[Space]*spaceReader{}, scans: map[scanKey]*MenuPicture{}}, nil
@@ -121,22 +127,112 @@ func Open(p string) (*Opened, error) {
 // readIFO reads and parses an IFO, falling back to its backup copy (.BUP)
 // when the IFO is missing, unreadable or does not parse: damaged discs and
 // images made from them often have a broken IFO and an intact backup, which
-// is what a player does too.
-func readIFO[T any](src Source, base string, parse func([]byte) (T, error)) (T, error) {
+// is what a player does too. When both parse but differ, the copy whose
+// tables hang together better (fewer problems) is used, the IFO on a tie.
+func readIFO[T any](src Source, base string, parse func([]byte) (T, error), problems func(T) int) (T, IFOReport, error) {
 	var zero T
+	rep := IFOReport{Name: base, Used: "IFO"}
 	b, err := src.ReadIFO(base + ".IFO")
+	var v T
+	ifoOK := false
 	if err == nil {
-		var v T
 		if v, err = parse(b); err == nil {
-			return v, nil
+			ifoOK = true
 		}
 	}
-	if bb, berr := src.ReadIFO(base + ".BUP"); berr == nil {
-		if v, perr := parse(bb); perr == nil {
-			return v, nil
+	bb, berr := src.ReadIFO(base + ".BUP")
+	if berr != nil {
+		if ifoOK {
+			return v, rep, nil
+		}
+		return zero, rep, fmt.Errorf("dvd: %s: %w", base, err)
+	}
+	bv, perr := parse(bb)
+	switch {
+	case ifoOK && perr != nil:
+		rep.Mismatch, rep.Note = true, "the backup doesn't parse"
+		return v, rep, nil
+	case !ifoOK && perr == nil:
+		rep.Used, rep.Mismatch, rep.Note = "BUP", true, "the IFO is missing or damaged ("+plainIFOErr(err)+")"
+		return bv, rep, nil
+	case !ifoOK:
+		return zero, rep, fmt.Errorf("dvd: %s: %w", base, err)
+	}
+	if bytesEqual(b, bb) {
+		return v, rep, nil
+	}
+	rep.Mismatch = true
+	pi, pb := problems(v), problems(bv)
+	if pb < pi {
+		rep.Used, rep.Note = "BUP", fmt.Sprintf("the IFO and its backup differ, and the backup's tables are consistent where the IFO's aren't (%d problems against %d)", pb, pi)
+		return bv, rep, nil
+	}
+	rep.Note = fmt.Sprintf("the IFO and its backup differ; the IFO is used (%d problems against the backup's %d)", pi, pb)
+	return v, rep, nil
+}
+
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
 		}
 	}
-	return zero, fmt.Errorf("dvd: %s: %w", base, err)
+	return true
+}
+
+func plainIFOErr(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	return strings.TrimPrefix(err.Error(), "dvd: ")
+}
+
+// vmgProblems counts what doesn't hang together in a VMG.
+func vmgProblems(v *VMG) int {
+	n := 0
+	if len(v.Titles) == 0 {
+		n += 5
+	}
+	for _, t := range v.Titles {
+		if t.VTS < 1 || t.VTS > maxTitleSets || (v.NumTitleSets > 0 && t.VTS > v.NumTitleSets) || t.VTSTitle < 1 {
+			n++
+		}
+	}
+	return n
+}
+
+// vtsProblems counts what doesn't hang together in a VTS: missing tables,
+// chapters naming PGCs that don't exist, cells outside the title VOB.
+func vtsProblems(v *VTS) int {
+	n := 0
+	if len(v.PGCs) == 0 {
+		n += 5
+	}
+	if len(v.PTT) == 0 {
+		n += 5
+	}
+	for _, list := range v.PTT {
+		for _, p := range list {
+			if p.PGCN < 1 || p.PGCN > len(v.PGCs) {
+				n++
+			}
+		}
+	}
+	for _, e := range v.PGCs {
+		if e.PGC == nil {
+			n++
+			continue
+		}
+		for _, c := range e.PGC.Cells {
+			if c.LastSector < c.FirstSector || (v.TitleVOBSectors != 0 && c.FirstSector >= v.TitleVOBSectors) {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // Close releases the reader file handles and the source.
@@ -522,54 +618,15 @@ func nextTitlePGC(v *VTS, vtsTTN, pgcn int) int {
 	return 0
 }
 
-// MainTitle guesses the feature: the title with the most distinct video.
-// Structural copy protection adds decoy titles that replay the feature's
-// cells many times over or in scrambled order, and cells that point outside
-// the title VOB; counting each cell once, skipping junk cells and preferring
-// the title that plays its cells in disc order picks the real one.
+// MainTitle guesses the feature with the title scoring engine (see
+// Analyze): the title with the most distinct, readable video, marked down for
+// the signs of decoys (cells replayed many times over or in scrambled order,
+// cells outside the title VOB, zero-length cell spam, looping PGC chains) and
+// up for what the disc's own first play reaches. It reads the IFOs only.
 func (d *Disc) MainTitle() *TitleSummary {
-	type cand struct {
-		ts       TitleSummary
-		distinct float64
-		jumps    int
-	}
-	var cs []cand
-	for _, ts := range d.Titles() {
-		v := d.VTS[ts.VTS]
-		c := cand{ts: ts}
-		seen := map[[2]uint32]bool{}
-		var prev uint32
-		for i, tc := range ts.Cells {
-			cell := tc.Cell
-			if cell.LastSector < cell.FirstSector || (v != nil && v.TitleVOBSectors != 0 && cell.FirstSector >= v.TitleVOBSectors) {
-				continue
-			}
-			k := [2]uint32{cell.FirstSector, cell.LastSector}
-			if !seen[k] {
-				seen[k] = true
-				c.distinct += cell.Duration
-			}
-			if i > 0 && cell.FirstSector < prev {
-				c.jumps++
-			}
-			prev = cell.FirstSector
-		}
-		cs = append(cs, c)
-	}
-	if len(cs) == 0 {
+	r := d.Analyze(RankOptions{})
+	if len(r.Candidates) == 0 {
 		return nil
 	}
-	sort.SliceStable(cs, func(i, j int) bool {
-		a, b := cs[i], cs[j]
-		// Within a minute of each other, decoys and the feature tie on
-		// content: the fewest jumps back on the disc wins.
-		if math.Abs(a.distinct-b.distinct) > 60 {
-			return a.distinct > b.distinct
-		}
-		if a.jumps != b.jumps {
-			return a.jumps < b.jumps
-		}
-		return a.ts.Duration > b.ts.Duration
-	})
-	return &cs[0].ts
+	return r.Candidates[0].summary
 }

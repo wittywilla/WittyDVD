@@ -62,6 +62,11 @@ func check(ctx context.Context, j *Job, src *discSource, o DiscOptions, res *Res
 		main = d.Disc.MainTitle()
 		dvdStructure(j, d, titles, main)
 	})
+	if !menusScrambled {
+		j.Engine("ranking the titles", func() { dvdRanking(j, d, main) })
+	} else {
+		j.Engine("ranking the titles", func() { dvdRankingReport(j, d.Disc.Analyze(wittydvd.RankOptions{}), main) })
+	}
 
 	from, to := o.From, o.To
 	if o.Crawl {
@@ -444,6 +449,69 @@ func dvdStructure(j *Job, d *wittydvd.Opened, titles []wittydvd.TitleSummary, ma
 		j.Add(Finding{Severity: SevProblem, Title: "The main title runs past the end of the video files", What: "The copy looks incomplete: the index expects more video than there is.", Fix: "Make a new copy of the disc."})
 	case past > 0:
 		j.Add(Finding{Severity: SevInfo, Title: "Some titles point past the end of the video files", What: plural(past, "title does", "titles do") + " this, though not the main one. Decoy titles added as copy protection do this. The ones with real video are fine."})
+	}
+}
+
+// dvdRanking reports how the title scoring engine ranks the titles, with the
+// menus' own Play button when they can be read (NAV packs only: nothing is
+// decrypted).
+func dvdRanking(j *Job, d *wittydvd.Opened, main *wittydvd.TitleSummary) {
+	dvdRankingReport(j, d.Analyze(), main)
+}
+
+func dvdRankingReport(j *Job, r *wittydvd.Ranking, main *wittydvd.TitleSummary) {
+	if len(r.Candidates) == 0 {
+		return
+	}
+	const shown = 8
+	var det []string
+	for i, c := range r.Candidates {
+		if i >= shown {
+			break
+		}
+		line := fmt.Sprintf("%d. Title %d (title set %d, PGC %d): %s, score %.1f, %s", i+1, c.TitleNum, c.VTS, c.PGC, hms(c.Duration), c.Score, c.Class)
+		if fl := c.Flags.Names(); len(fl) > 0 {
+			line += " [" + strings.Join(fl, ", ") + "]"
+		}
+		det = append(det, line)
+		for _, why := range c.Reasons {
+			det = append(det, "    "+why)
+		}
+	}
+	if len(r.Episodes) > 0 {
+		var list []string
+		for _, e := range r.Episodes {
+			list = append(list, fmt.Sprintf("%d (%s)", e.Title, hms(e.Duration)))
+		}
+		det = append(det, "Episodes in viewing order: "+strings.Join(list, ", "))
+	}
+	what := fmt.Sprintf("Every title is scored from the disc's index, its first-play program and, when they can be read, its first menu's buttons. Title %d scored best.", r.Main)
+	if main != nil && main.Number != r.Main {
+		what += fmt.Sprintf(" From the index alone (what Play movie uses) the pick is title %d.", main.Number)
+	}
+	j.Add(Finding{Severity: SevInfo, Title: "How the main title was chosen", What: what, Details: det, More: max(0, len(r.Candidates)-shown)})
+	if len(r.Decoys) > 0 || len(r.Warnings) > 0 {
+		sev := SevInfo
+		if c := r.Candidate(r.Main); c != nil && c.Flags.Has(wittydvd.FlagOutOfRange) {
+			sev = SevWarn
+		}
+		var list []string
+		for _, n := range r.Decoys {
+			list = append(list, strconv.Itoa(n))
+		}
+		det := append([]string{}, r.Warnings...)
+		if len(list) > 0 {
+			l, more := clip(list, len(list), 40)
+			det = append(det, "Decoy titles: "+strings.Join(l, ", "))
+			if more > 0 {
+				det[len(det)-1] += fmt.Sprintf(" and %d more", more)
+			}
+		}
+		title := "Notes on the disc's titles"
+		if len(r.Decoys) > 0 {
+			title = "This disc has " + plural(len(r.Decoys), "decoy title", "decoy titles")
+		}
+		j.Add(Finding{Severity: sev, Title: title, What: "Copy-protection layouts add titles that aren't the film. They're recognised from the index alone and skipped; nothing is decrypted.", Details: det})
 	}
 }
 

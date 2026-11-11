@@ -656,6 +656,18 @@ var MenuTypes = map[string]int{"title": 2, "root": 3, "subpicture": 4, "audio": 
 type Disc struct {
 	VMG *VMG
 	VTS map[int]*VTS
+	// IFOReports says, per index file, whether the IFO or its .BUP backup
+	// was used and why (filled by Open; empty for discs built by hand).
+	IFOReports []IFOReport
+}
+
+// IFOReport is what reading one IFO and its backup found.
+type IFOReport struct {
+	Name     string `json:"name"` // VIDEO_TS or VTS_nn_0
+	VTS      int    `json:"vts"`  // 0 for the VMG
+	Used     string `json:"used"` // IFO or BUP
+	Mismatch bool   `json:"mismatch,omitempty"`
+	Note     string `json:"note,omitempty"`
 }
 
 // vobSectors is the size in sectors of the VOB a domain plays from, as the

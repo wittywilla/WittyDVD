@@ -30,10 +30,11 @@ Plays DVD images and `VIDEO_TS` folders in WittyMediaServer the way a DVD player
 - **Copes with damage:** a broken IFO table is read from its `.BUP` backup, and malformed tables, commands and sub-pictures are refused rather than trusted.
 - **Refuses scrambled discs.** CSS-protected images are detected and refused with a clear message. Nothing is ever decrypted. The server makes its own check as well, whatever a module says.
 - **Tells you what's on a disc.** The `wittydvd` command-line tool lists titles and menus, simulates a run through the menus, and reports dead ends.
+- **Finds the film among decoys.** A scoring engine ranks every title from the unencrypted index alone and gives its reasons. It looks at distinct video, cells replayed or shuffled, cells outside the video files, zero-length cell spam, looping chains, where first play and the menu's Play button go, stream counts and chapters. It also picks out a TV disc's episodes and its play-all title. It doesn't bypass CSS. See [docs/TITLE-HEURISTICS.md](docs/TITLE-HEURISTICS.md).
 
 Decoding the video and audio is left to the player: WittyDVD says which bytes to play, when, and what to draw over them. Turning those steps into streams stays with the server.
 
-How to use it is in **Help** inside WittyMediaServer: see DVDs.
+How to use it is in **Help** inside WittyMediaServer: see DVDs. How titles are ranked is in [docs/TITLE-HEURISTICS.md](docs/TITLE-HEURISTICS.md).
 
 ## How to get it
 
@@ -93,7 +94,7 @@ go run ./cmd/wittydvd info MY_DISC.ISO
 | `wittydvd render <disc> <dir>` | The first menu's highlight pictures |
 | `wittydvd disc ls <disc>` | The files inside the image |
 
-To use it as a library, `wittydvd.Open` opens an image or folder, and `wittydvd.NewNav` gives a navigator: `Start`, `PressButton`, `CellEnded` and the rest return what to do next.
+To use it as a library, `wittydvd.Open` opens an image or folder, and `wittydvd.NewNav` gives a navigator: `Start`, `PressButton`, `CellEnded` and the rest return what to do next. `Disc.MainTitle`, `Disc.RankTitles`, `Disc.Episodes` and `Disc.Explain` say which title is which, and `Opened.Analyze` adds the menu's own Play button.
 
 `wittydvdplayer/` is the same engine as a program of its own for WittyMediaPlayer, with its own `go.mod` and manifest.
 
