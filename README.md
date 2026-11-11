@@ -27,14 +27,14 @@ Plays DVD images and `VIDEO_TS` folders in WittyMediaServer the way a DVD player
 - **Plays the disc's own program:** first play, menus with highlighted buttons, titles, chapters, angles, audio and subtitle choices, stills, resume points and parental blocks. It runs the disc's commands in a small virtual machine.
 - **Reads without mounting:** `.iso` and `.img` images and `VIDEO_TS` folders, through WittyDisc.
 - **Draws subtitles and button highlights** from the disc's own sub-pictures and palette.
-- **Copes with damage:** a broken IFO table is read from its `.BUP` backup, and malformed tables, commands and sub-pictures are refused rather than trusted.
+- **Copes with damage:** each table of an index file is read from whichever copy (IFO or `.BUP`) has it whole, tables that disagree are mended from the ones that agree, and unreadable sectors are passed over. Malformed tables, commands and sub-pictures are refused rather than trusted. See [docs/QUIRKS.md](docs/QUIRKS.md).
 - **Refuses scrambled discs.** CSS-protected images are detected and refused with a clear message. Nothing is ever decrypted. The server makes its own check as well, whatever a module says.
 - **Tells you what's on a disc.** The `wittydvd` command-line tool lists titles and menus, simulates a run through the menus, and reports dead ends.
-- **Finds the film among decoys.** A scoring engine ranks every title from the unencrypted index alone and gives its reasons. It looks at distinct video, cells replayed or shuffled, cells outside the video files, zero-length cell spam, looping chains, where first play and the menu's Play button go, stream counts and chapters. It also picks out a TV disc's episodes and its play-all title. It doesn't bypass CSS. See [docs/TITLE-HEURISTICS.md](docs/TITLE-HEURISTICS.md).
+- **Finds the film among decoys.** A scoring engine ranks every title from the unencrypted index and the disc's own commands, and says how sure it is and why. It looks at distinct video, cells replayed, shuffled, hollow, overlapping or missing from the disc's own address tables, title sets with no video, looping chains, where first play and the menu's Play button go, and which titles nothing leads to. It finds a film that only the disc's commands put together, a film cut into several titles, a TV disc's episodes and its play-all title, and the angles and cuts of a film. It doesn't bypass CSS. See [docs/TITLE-HEURISTICS.md](docs/TITLE-HEURISTICS.md).
 
 Decoding the video and audio is left to the player: WittyDVD says which bytes to play, when, and what to draw over them. Turning those steps into streams stays with the server.
 
-How to use it is in **Help** inside WittyMediaServer: see DVDs. How titles are ranked is in [docs/TITLE-HEURISTICS.md](docs/TITLE-HEURISTICS.md).
+How to use it is in **Help** inside WittyMediaServer: see DVDs. How titles are ranked is in [docs/TITLE-HEURISTICS.md](docs/TITLE-HEURISTICS.md), and what odd discs do and how each case is handled in [docs/QUIRKS.md](docs/QUIRKS.md). None of the title mapping has been run against a physical disc yet: it is tested on synthetic discs that the test code writes.
 
 ## How to get it
 
@@ -77,6 +77,14 @@ go test ./... -count=1
 go run github.com/wittywilla/wittymodule/cmd/wittymodule check .
 ```
 
+The parsers are fuzzed. Each target's seeds run with every test; to explore further, one target at a time:
+
+```bash
+go test -run '^$' -fuzz '^FuzzOpenDisc$' -fuzztime 1m .
+```
+
+The targets are `FuzzParseVMG`, `FuzzParseVTS`, `FuzzOpenDisc`, `FuzzNavPack`, `FuzzVOB`, `FuzzSPU`, `FuzzVM`, `FuzzNav`, `FuzzRankTitles` and `FuzzParsers`, and `FuzzDecode` in `./wire`.
+
 The last one checks the manifest. On the same tool, `pack -targets linux/amd64 -out release .` builds a release for one system. CI also builds for every system.
 
 To look at a disc by hand:
@@ -88,13 +96,14 @@ go run ./cmd/wittydvd info MY_DISC.ISO
 | Command | What it shows |
 |---|---|
 | `wittydvd info <disc>` | Titles, menus, languages and the first-play program |
+| `wittydvd rank <disc> [json]` | Which title is the film, the episodes and decoys, how sure it is and why |
 | `wittydvd walk <disc> [button...]` | Simulates inserting the disc, then pressing menu buttons by number |
 | `wittydvd crawl <disc>` | Presses every button of every menu and reports dead ends |
 | `wittydvd pgc <disc> <fp, vmgm, vtsm or vts> <vts> <pgcn>` | The commands of one program chain |
 | `wittydvd render <disc> <dir>` | The first menu's highlight pictures |
 | `wittydvd disc ls <disc>` | The files inside the image |
 
-To use it as a library, `wittydvd.Open` opens an image or folder, and `wittydvd.NewNav` gives a navigator: `Start`, `PressButton`, `CellEnded` and the rest return what to do next. `Disc.MainTitle`, `Disc.RankTitles`, `Disc.Episodes` and `Disc.Explain` say which title is which, and `Opened.Analyze` adds the menu's own Play button.
+To use it as a library, `wittydvd.Open` opens an image or folder, and `wittydvd.NewNav` gives a navigator: `Start`, `PressButton`, `CellEnded` and the rest return what to do next. `Disc.MainTitle`, `Disc.RankTitles`, `Disc.Episodes` and `Disc.Explain` say which title is which, and `Opened.Analyze` adds the menus' buttons and gives the whole answer: the pick with its confidence and evidence, what to play for it, its versions, and the episodes. A server gets the same from the helper's `analyze` call.
 
 `wittydvdplayer/` is the same engine as a program of its own for WittyMediaPlayer, with its own `go.mod` and manifest.
 

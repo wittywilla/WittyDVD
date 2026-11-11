@@ -157,12 +157,11 @@ func checkVTS(v *VTS, n int) []Repair {
 // authored chain does. A decoy chain that borrows real ids in a scrambled
 // order is left as it is. It returns how many cells were mended.
 func mendCells(p *PGC, ix *cellIndex, size uint32) int {
-	type fix struct {
-		i int
-		r cellRange
-	}
-	var fixes []fix
+	// Where each cell would lie: as it says, or as the table says.
+	place := make([]cellRange, len(p.Cells))
+	fixes := 0
 	for i, c := range p.Cells {
+		place[i] = cellRange{c.FirstSector, c.LastSector}
 		if !badRange(c, size) {
 			continue
 		}
@@ -170,36 +169,28 @@ func mendCells(p *PGC, ix *cellIndex, size uint32) int {
 		if !ok || c.VOBID == 0 || (size != 0 && r.first >= size) {
 			return 0
 		}
-		fixes = append(fixes, fix{i, r})
+		place[i] = r
+		fixes++
 	}
-	if len(fixes) == 0 {
+	if fixes == 0 {
 		return 0
 	}
-	at := func(i int) cellRange {
-		for _, f := range fixes {
-			if f.i == i {
-				return f.r
-			}
-		}
-		return cellRange{p.Cells[i].FirstSector, p.Cells[i].LastSector}
-	}
-	var prev cellRange
 	for i, c := range p.Cells {
-		r := at(i)
 		// Cells of an angle block lie interleaved, over each other.
-		if i > 0 && c.BlockType != 1 && !c.Interleaved && r.first <= prev.last {
+		if i > 0 && c.BlockType != 1 && !c.Interleaved && place[i].first <= place[i-1].last {
 			return 0
 		}
-		prev = r
 	}
-	for _, f := range fixes {
-		c := &p.Cells[f.i]
-		c.FirstSector, c.LastSector = f.r.first, f.r.last
-		if c.LastVOBUStart < f.r.first || c.LastVOBUStart > f.r.last {
-			c.LastVOBUStart = f.r.first
+	for i := range p.Cells {
+		c := &p.Cells[i]
+		if r := place[i]; r.first != c.FirstSector || r.last != c.LastSector {
+			c.FirstSector, c.LastSector = r.first, r.last
+			if c.LastVOBUStart < r.first || c.LastVOBUStart > r.last {
+				c.LastVOBUStart = r.first
+			}
 		}
 	}
-	return len(fixes)
+	return fixes
 }
 
 // rebuildPTT makes a title's chapter list from its program chains: every

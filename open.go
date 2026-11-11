@@ -413,7 +413,10 @@ func (o *Opened) RangeExtents(sp Space, first, last uint32) ([]FileExtent, error
 	if err != nil {
 		return nil, err
 	}
-	return sliceExtents(all, int64(first)*Sector, int64(last-first+1)*Sector), nil
+	if last < first {
+		return nil, nil // a cell that ends before it starts holds nothing
+	}
+	return sliceExtents(all, int64(first)*Sector, (int64(last)-int64(first)+1)*Sector), nil
 }
 
 func sliceExtents(all []FileExtent, off, length int64) []FileExtent {

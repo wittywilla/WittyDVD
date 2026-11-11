@@ -5,12 +5,22 @@ What changed in WittyDVD, newest first. What changed before it had a repository 
 
 ## Unreleased
 
-- **Title heuristics:** a scoring engine ranks every title and explains its choice (`Disc.RankTitles`, `Disc.Analyze`, `Disc.Explain`, `Opened.Analyze`). It works from distinct video, repeated, shuffled and out-of-range cells, zero-length cell spam, impossible cell lengths, looping PGC chains, broken chapter tables, a dry run of first play, menu jump commands, the first menu's Play button, stream counts, chapter regularity and the largest title set. `MainTitle` uses it and keeps its signature. Other titles are classed as decoy, duplicate, alternate cut, trailer, featurette or extra.
-- **TV discs:** `Disc.Episodes` finds the episodes, in viewing order, and the play-all title.
-- **IFO against BUP:** when both copies parse but differ, the one whose tables are consistent is used. `Disc.IFOReports` says which copy was read and why.
-- The diagnose report ranks the titles with their reasons, and warns about structure-protection decoys.
-- None of this bypasses CSS. Scrambled discs are still refused, and nothing is decrypted. See `docs/TITLE-HEURISTICS.md`.
-- Tests build synthetic IFOs in memory: a movie, a 99-title decoy disc, a shuffled decoy, a TV disc, a corrupt IFO with a good BUP, first play and menu targets, and cell spam. A fuzz test covers the scorer.
+- **Title mapping:** a scoring engine ranks every title and explains its choice (`Disc.RankTitles`, `Disc.Analyze`, `Disc.Explain`, `Opened.Analyze`, and `wittydvd rank`). `MainTitle` uses it and keeps its signature. See `docs/TITLE-HEURISTICS.md`.
+  - A title is read from its chapter table and by a bounded dry run of its own commands, and the reading that shows more real video is kept: a film that only `LinkPGCN` commands put together is found.
+  - Decoys are told by cells that are replayed, shuffled, out of range, zero-length, hollow, overlapping or missing from the title set's own cell address table, by chains that loop, by title sets with no video files, and by titles no command and no menu button leads to. A scrambled title loses the credit for video that other titles play in order.
+  - What the disc itself does counts for most: a dry run of first play, of each button of the first menu, and a static reading of every command and button for what can be reached at all.
+  - A film cut into titles that play on into each other is one feature (`Ranking.Feature` lists exactly what to play). Camera angles, cuts chosen by parental level and alternate cuts are listed (`Ranking.Versions`).
+  - **TV discs:** `Disc.Episodes` finds the episodes in viewing order and the play-all title. A play-all title that is the only way to its episodes is split, by program chain or by VOB.
+  - Every decision comes with a confidence and its evidence as data (`Ranking.Why`, `Ranking.Decisions`, `Candidate.Evidence`).
+- **Index files, table by table:** each table of an IFO is read by itself, and one that is damaged in one copy is taken from the other (`Disc.IFOReports` says which). The cell address tables, VOBU maps and time maps are now read too. The tables are checked against each other and mended where one can mend another (`Disc.CrossCheck`, `Disc.Repairs`): chapter lists rebuilt from program chains, cells from the cell address table, counts and sizes from the tables that agree. Chapter times fall back on programs, and cell times on the time map.
+- **Unreadable sectors** are tried again, then passed on as zeros and counted (`Opened.ReadStats`). An interleaved cell carries on from its next VOBU.
+- **Folders:** a `VIDEO_TS` folder is found whatever case its name is in, and a folder that holds the index files directly is opened.
+- **Limits:** every table read is bounds-checked without overflow on 32-bit builds, and one budget bounds the program chains and cells of a whole disc. A PGCIT may hold 8192 rows (it was 1000), and rows that point at the same chain share it. A disc of 99 titles and 2941 program chains opens in about 17 ms and ranks in about 65 ms.
+- **For servers:** the helper answers `analyze` with the ranking as JSON and `readStats` with the sectors padded. Both are new calls; nothing else on the wire changed, and the new fields of the disc's structure are ignored by an older server.
+- The diagnose report ranks the titles with their confidence and reasons, lists what was mended in the index, and warns about structure-protection decoys.
+- None of this bypasses CSS. Scrambled discs are still refused, nothing is decrypted, and no decryption library is linked or loaded. See `docs/QUIRKS.md`.
+- Tests write their own discs: a generator makes index files, sparse VOBs that hold only NAV packs, and whole discs as folders or UDF, ISO 9660 and bridge images. There is one disc for each obfuscation pattern, property tests that renumber titles and add decoys, tests that damage tables and sectors, and a fuzz target for each parser. **No physical disc has been through any of it.**
+- **Changed for callers of the library:** `ParseVTS` no longer fails on a damaged PGCIT: the table comes back empty or with empty chains in the damaged rows (`PGCEntry.Damaged`). `Disc.Title` follows a title into the next chain its chapter table names when the chain has no next link, as the navigator already did, and keeps a chapter's number when its entry names nothing. `ReadSectors` on an opened disc pads unreadable sectors instead of failing.
 
 - **WittyDVD 0.3.1:** The checksums it records are those of what was published. 0.3.0 was never released.
 

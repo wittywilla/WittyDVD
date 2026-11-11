@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func feature28() []fxCell { return cellsAt(0, 28, 4*min_, 1000) } // 1:52:00
@@ -257,11 +258,57 @@ func brokenChapters() fxDisc {
 	return d
 }
 
-// zeroTimes: the film's cells give no play time at all; only the chain's
-// play time and the time map say how long anything is.
-func zeroTimes() fxDisc {
-	d := simpleMovie()
+// tvNoPlayAll: five episodes as five titles, numbered against their order
+// on the disc, and no title that plays them all.
+func tvNoPlayAll() fxDisc {
+	order := []int{3, 1, 5, 2, 4} // title numbers, in disc order
+	pgcs := make([]fxPGC, 6)
+	for i, t := range order {
+		pgcs[t-1] = fxPGC{title: t, cells: cellsAt(uint32(i)*9000, 8, (5.3+0.1*float64(i))*min_, 1100)}
+	}
+	pgcs[5] = fxPGC{title: 6, cells: cellsAt(46000, 1, 100, 800)}
+	return fxDisc{titles: titlesFor(1, 6), vts: []fxVTS{{titleSectors: 50000, audio: 1, pgcs: pgcs}}}
+}
+
+// tvOneCellPlayAll: the play-all title plays each episode as one long cell,
+// where the episodes' own titles have six cells each.
+func tvOneCellPlayAll() fxDisc {
+	d := tvDisc()
+	var long []fxCell
+	for _, t := range []int{5, 2, 3, 4} {
+		c := d.vts[0].pgcs[t-1].cells
+		var dur float64
+		for _, x := range c {
+			dur += x.dur
+		}
+		long = append(long, fxCell{first: c[0].first, last: c[len(c)-1].last, dur: dur, vob: 50, id: t})
+	}
+	d.vts[0].pgcs[0] = fxPGC{title: 1, cells: long}
 	return d
+}
+
+// linkedAmongDecoys: the film that only its commands put together, on a
+// disc with forty decoys, whose IFO has lost its chapter table and whose BUP
+// has lost its cell address table.
+func linkedAmongDecoys() fxDisc {
+	return addDecoys(linkedFeature(), rand.New(rand.NewSource(11)), 40)
+}
+
+// chainedAmongFakes: the film cut into chained titles, in the only title
+// set with video; three more title sets are an index each, claiming a film
+// longer than all the parts together.
+func chainedAmongFakes() fxDisc {
+	d := chainedTitles()
+	for n := 2; n <= 4; n++ {
+		d.vts = append(d.vts, fxVTS{titleSectors: 90000, audio: 3, subp: 8, noVOB: true, pgcs: []fxPGC{{title: 1, cells: cellsAt(0, 50, 4*min_, 1500)}}})
+		d.titles = append(d.titles, fxTitle{n, 1})
+	}
+	return d
+}
+
+// tvAmongDecoys: the TV disc with sixty decoys thrown in.
+func tvAmongDecoys() fxDisc {
+	return addDecoys(tvDisc(), rand.New(rand.NewSource(5)), 60)
 }
 
 type scenario struct {
@@ -269,7 +316,9 @@ type scenario struct {
 	disc func() fxDisc
 	// opened says the scenario needs the VOB files: it is then read from a
 	// folder, and Opened.Analyze is what is checked.
-	opened   bool
+	opened bool
+	// damage scratches the index files before they are read.
+	damage   func(files fstest.MapFS)
 	main     int
 	decoys   int // at least this many
 	class    map[int]string
@@ -323,6 +372,20 @@ var scenarios = []scenario{
 	{name: "guarded feature behind the Play button", disc: guardedFeature, opened: true, main: 2, level: "high",
 		flags: map[int]Flag{2: FlagMenuPlay}},
 	{name: "chapter table points nowhere", disc: brokenChapters, main: 1, chapters: 6, length: 120},
+	{name: "TV disc without play all", disc: tvNoPlayAll, main: 4, episodes: []int{3, 1, 5, 2, 4},
+		class: map[int]string{3: ClassEpisode, 6: ClassTrailer}},
+	{name: "play all of one cell per episode", disc: tvOneCellPlayAll, main: 1, episodes: []int{5, 2, 3, 4}, playAll: 1},
+
+	// Adversarial combinations.
+	{name: "linked film, forty decoys, a table gone from each copy", disc: linkedAmongDecoys, main: 1, feature: []int{1}, length: 112.0 + 10.0/60, decoys: 30,
+		flags: map[int]Flag{1: FlagAssembled},
+		damage: func(files fstest.MapFS) {
+			wipeTable(files[vtsIFO].Data, 0xc8)
+			wipeTable(files[vtsBUP].Data, 0xe0)
+		}},
+	{name: "chained film among fake title sets", disc: chainedAmongFakes, opened: true, main: 7, feature: []int{7, 3, 9, 2}, length: 120, decoys: 9,
+		flags: map[int]Flag{11: FlagNoVideo | FlagDecoy, 7: FlagAssembled | FlagFirstPlay}},
+	{name: "TV disc among sixty decoys", disc: tvAmongDecoys, main: 1, episodes: []int{5, 2, 3, 4}, playAll: 1, decoys: 40},
 }
 
 func (sc scenario) run(t *testing.T, d fxDisc) *Ranking {
@@ -337,7 +400,11 @@ func (sc scenario) run(t *testing.T, d fxDisc) *Ranking {
 		t.Cleanup(func() { o.Close() })
 		r = o.Analyze()
 	} else {
-		o = openFS(t, d.files())
+		files := d.files()
+		if sc.damage != nil {
+			sc.damage(files)
+		}
+		o = openFS(t, files)
 		r = o.Disc.Analyze(RankOptions{})
 		if m := o.Disc.MainTitle(); m == nil || m.Number != r.Main {
 			t.Fatalf("MainTitle disagrees with the ranking: %+v", m)

@@ -656,7 +656,13 @@ func (n *Nav) showCell(s *navState, a action, sim bool) *Step {
 	s.held = false
 	if s.domain == DomainVTS {
 		pgn := programOf(p, s.cellN)
-		for i, x := range n.pttList(s) {
+		list := n.pttList(s)
+		// Looking the chapter up is a walk through the chapter table: for a
+		// dry run it draws on the budget like the commands do.
+		if !s.regs.spend(int64(len(list) / 16)) {
+			return n.stopStep(s, errFuel)
+		}
+		for i, x := range list {
 			if x.PGCN == s.pgcn && x.PGN <= pgn {
 				s.regs.SPRM[SprmPTTN] = uint16(i + 1)
 			}

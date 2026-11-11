@@ -75,7 +75,7 @@ func testVTS(pgcs ...[3]int) []byte {
 		cells, mask, block := spec[0], spec[1], spec[2]
 		cat := mask | block<<20
 		if i == 0 {
-			cat |= 0x81 << 24 // entry PGC of title 1
+			cat |= -0x7f000000 // 0x81 in the top byte: entry PGC of title 1 (written so that it fits a 32-bit int)
 		}
 		b.u32(it+8+i*8, cat)
 		b.u32(it+12+i*8, at)

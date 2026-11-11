@@ -44,16 +44,29 @@ type reach struct {
 	// most discs, what its first button ("Play") does.
 	firstJump int
 	nodes     int
+	// complete is false when the search ran out of its budget: what it
+	// didn't reach may still be reachable.
+	complete bool
 }
+
+// maxReachWork bounds the walks through chapter tables the search makes.
+const maxReachWork = 4_000_000
 
 // maxReachNodes bounds the search: every program chain of a disc is a node,
 // and a disc's budget is maxDiscPGCs of them.
 const maxReachNodes = 2 * maxDiscPGCs
 
 func (d *Disc) reachable(buttons []ButtonCommand) *reach {
-	r := &reach{depth: map[int]int{}, direct: map[int]int{}}
+	r := &reach{depth: map[int]int{}, direct: map[int]int{}, complete: true}
 	if d == nil || d.VMG == nil {
 		return r
+	}
+	work := maxReachWork
+	var sets []int // title sets in order, so that the search is the same every time
+	for n := 1; n <= maxTitleSets; n++ {
+		if d.VTS[n] != nil {
+			sets = append(sets, n)
+		}
 	}
 	byNode := map[pgcNode][]Command{}
 	for _, b := range buttons {
@@ -114,7 +127,11 @@ func (d *Disc) reachable(buttons []ButtonCommand) *reach {
 	depth := map[pgcNode]int{}
 	var queue []pgcNode
 	push := func(n pgcNode, dep int) {
-		if _, ok := depth[n]; ok || len(depth) >= maxReachNodes {
+		if _, ok := depth[n]; ok {
+			return
+		}
+		if len(depth) >= maxReachNodes {
+			r.complete = false
 			return
 		}
 		depth[n] = dep
@@ -242,7 +259,7 @@ func (d *Disc) reachable(buttons []ButtonCommand) *reach {
 							}
 						}
 					} else {
-						for vts := range d.VTS {
+						for _, vts := range sets {
 							vtsTitle(vts, j.TTN, dep+1)
 						}
 					}
@@ -267,7 +284,7 @@ func (d *Disc) reachable(buttons []ButtonCommand) *reach {
 								vtsTitle(vts, j.TTN, dep+1)
 							}
 						} else {
-							for k := range d.VTS {
+							for _, k := range sets {
 								menus(DomainVTSM, k, j.Menu, dep+1)
 							}
 						}
@@ -284,9 +301,22 @@ func (d *Disc) reachable(buttons []ButtonCommand) *reach {
 			title(1, dep+1)
 		case DomainVTS:
 			same(p.NextPGCN)
+			if p.NextPGCN != 0 {
+				break
+			}
+			// Without a next link the title goes on with the next chain
+			// its chapter table names: a walk through that table.
 			for _, ttn := range owners[vp{n.vts, n.pgcn}] {
 				t := d.VMG.Titles[ttn-1]
-				same(nextTitlePGC(d.VTS[n.vts], t.VTSTitle, n.pgcn))
+				v := d.VTS[n.vts]
+				if t.VTSTitle >= 1 && t.VTSTitle <= len(v.PTT) {
+					work -= len(v.PTT[t.VTSTitle-1])
+				}
+				if work < 0 {
+					r.complete = false
+					break
+				}
+				same(nextTitlePGC(v, t.VTSTitle, n.pgcn))
 			}
 		}
 	}

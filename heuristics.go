@@ -664,6 +664,11 @@ func (a *analysis) title(number int) *feat {
 		f.next, f.whole = p.next, p.whole
 		return f
 	}
+	// A run that was cut off (the budget, the cell limit) says nothing
+	// about what the title plays.
+	if !p.whole && !p.loop {
+		return f
+	}
 	g := a.measure(p.ts)
 	a.scoreTitle(g)
 	g.next, g.whole = p.next, p.whole
@@ -1213,7 +1218,7 @@ func (a *analysis) discSignals() {
 	}
 	// Nothing leads to it: only said when the buttons were read, and when
 	// the search found its way to some title at all.
-	if opt.ButtonsComplete && len(opt.Buttons) > 0 && len(a.reach.depth) > 0 {
+	if opt.ButtonsComplete && a.reach.complete && len(opt.Buttons) > 0 && len(a.reach.depth) > 0 {
 		for _, f := range a.feats {
 			if _, ok := a.reach.depth[f.c.TitleNum]; !ok && !f.c.Flags.Has(FlagMenuTarget) {
 				f.c.add("unreachable", w.Unreachable, FlagUnreachable, "no command and no menu button on the disc leads to it")

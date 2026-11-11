@@ -76,21 +76,69 @@ func TestStressDiscIsBounded(t *testing.T) {
 	}
 	alloc := (after.TotalAlloc - before.TotalAlloc) >> 20
 	t.Logf("opened in %v, ranked in %v, %d MiB allocated in all, index files %d KiB", opened, took-opened, alloc, (len(files[vtsIFO].Data)+len(files["VIDEO_TS/VIDEO_TS.IFO"].Data))>>10)
-	// Generous bounds: a Raspberry Pi 3 is some twenty times slower than
-	// the machines tests run on, and must still open this in a few seconds.
-	if took > 3*time.Second {
+	// The time is only a guard against the analysis going quadratic: a
+	// laptop takes about a tenth of a second, a Raspberry Pi 3 some twenty
+	// times that. A busy machine or the race detector says nothing.
+	limit := 15 * time.Second
+	if raceOn {
+		limit = 5 * time.Minute
+	}
+	if took > limit {
 		t.Errorf("opening and ranking took %v", took)
 	}
 	if alloc > 192 {
 		t.Errorf("%d MiB allocated", alloc)
 	}
-	// Ten times the chains must not take a hundred times as long.
+	// Nearly three times the chains: the work is bounded by budgets, not by
+	// what the disc claims, so the answer still comes, and is the same.
 	big := stressDisc(80).files()
 	start = time.Now()
 	ob := openFS(t, big)
 	rb := ob.Disc.Analyze(RankOptions{})
-	if took := time.Since(start); took > 10*time.Second || rb.Main != 42 {
-		t.Errorf("7841 chains: %v, main %d", took, rb.Main)
+	if took := time.Since(start); took > 4*limit || rb.Main != 42 || len(rb.Decoys) != 98 {
+		t.Errorf("7841 chains: %v, main %d, %d decoys", took, rb.Main, len(rb.Decoys))
+	}
+}
+
+// What the analysis may spend is fixed, whatever the disc holds: a disc
+// whose every title walks a chapter table of thousands of entries at every
+// cell runs the dry runs out of fuel, and is ranked from its tables.
+func TestDryRunsAreBounded(t *testing.T) {
+	var cells []fxCell
+	for i := 0; i < 250; i++ {
+		cells = append(cells, fxCell{first: uint32(i) * 100, last: uint32(i)*100 + 99, dur: 30})
+	}
+	var pgcs []fxPGC
+	ptt := map[int][]PTT{}
+	for t := 1; t <= 99; t++ {
+		first := len(pgcs) + 1
+		for k := 0; k < 8; k++ {
+			p := fxPGC{cells: cells, pre: []Command{setGPRM(1, k)}, next: len(pgcs) + 2}
+			if k == 0 {
+				p.title = t
+			}
+			if k == 7 {
+				p.next = 0
+			}
+			pgcs = append(pgcs, p)
+			for pg := 1; pg <= 250; pg++ {
+				ptt[t] = append(ptt[t], PTT{first + k, pg})
+			}
+		}
+	}
+	d := fxDisc{titles: titlesFor(1, 99), vts: []fxVTS{{titleSectors: 30000, audio: 1, pgcs: pgcs, ptt: ptt, noTMAP: true}}}
+	o := openFS(t, d.files())
+	a := &analysis{d: o.Disc, w: DefaultWeights, r: &Ranking{}, fuel: analysisFuel, work: analysisWork, vts: map[int]*vtsFacts{}, byTitle: map[int]*feat{}}
+	for _, tt := range o.Disc.VMG.Titles {
+		if f := a.title(tt.Number); f == nil || len(f.ts.Cells) != 2000 {
+			t.Fatalf("title %d: %d cells by %s, fuel %d", tt.Number, len(f.ts.Cells), f.ts.Path, a.fuel)
+		}
+	}
+	if a.fuel > 0 {
+		t.Fatalf("%d of %d fuel left: the walk through the chapter table isn't charged", a.fuel, analysisFuel)
+	}
+	if r := o.Disc.Analyze(RankOptions{}); r.Main == 0 || len(r.Candidates) != 99 {
+		t.Fatalf("main %d of %d", r.Main, len(r.Candidates))
 	}
 }
 
