@@ -53,6 +53,7 @@ type fxPGC struct {
 	blockMode, blockType, mask int
 	dur                        *float64 // play time, when it isn't the sum of the cells'
 	playback                   int
+	silent                     bool // turns on no audio stream
 }
 
 type fxVTS struct {
@@ -196,6 +197,9 @@ func encodePGC(p fxPGC, ids cellIDs) []byte {
 	}
 	t := bcdTime(total)
 	copy(b[4:], t[:])
+	if !p.silent {
+		b.u16(0x0c, 0x8000) // audio stream 0 is on
+	}
 	b.u16(0x9c, p.next)
 	b.u16(0x9e, p.prev)
 	b.u16(0xa0, p.up)

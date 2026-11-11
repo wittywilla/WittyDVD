@@ -250,6 +250,7 @@ type Weights struct {
 	FirstPlayPerMinute float64
 	MenuPlayPerMinute  float64
 	Scrambled          float64 // a quarter or more of its steps jump back on the disc
+	NoAudio            float64 // its program chain turns on no audio stream, where others of its title set do
 }
 
 // DefaultWeights are the weights MainTitle uses.
@@ -286,6 +287,7 @@ var DefaultWeights = Weights{
 	FirstPlayPerMinute: 0.25,
 	MenuPlayPerMinute:  0.35,
 	Scrambled:          -25,
+	NoAudio:            -20,
 }
 
 // RankOptions add what only an opened disc can tell.
@@ -373,6 +375,7 @@ type feat struct {
 	next     int     // the title the disc goes on to by itself
 	whole    bool
 	refs     int // commands and buttons outside titles that name it
+	audio    int // audio streams its first program chain turns on
 
 	borrowedDone bool
 }
@@ -840,6 +843,13 @@ func (a *analysis) measure(ts *TitleSummary) *feat {
 	for _, r := range f.iv {
 		f.sectors += uint64(r.last-r.first) + 1
 	}
+	if v != nil && c.PGC >= 1 && c.PGC <= len(v.PGCs) {
+		for _, stream := range v.PGCs[c.PGC-1].PGC.AudioControl {
+			if stream >= 0 {
+				f.audio++
+			}
+		}
+	}
 	if v != nil && ts.VTSTitle >= 1 && ts.VTSTitle <= len(v.PTT) {
 		ptts := v.PTT[ts.VTSTitle-1]
 		if len(ptts) > 0 {
@@ -1223,6 +1233,18 @@ func (a *analysis) discSignals() {
 			if _, ok := a.reach.depth[f.c.TitleNum]; !ok && !f.c.Flags.Has(FlagMenuTarget) {
 				f.c.add("unreachable", w.Unreachable, FlagUnreachable, "no command and no menu button on the disc leads to it")
 			}
+		}
+	}
+	// A film's program chain turns its soundtracks on (the audio stream
+	// control of the PGC). A long title that turns none on, in a title set
+	// where other titles do, plays in silence on a player.
+	most := map[int]int{}
+	for _, f := range a.feats {
+		most[f.c.VTS] = max(most[f.c.VTS], f.audio)
+	}
+	for _, f := range a.feats {
+		if f.audio == 0 && most[f.c.VTS] > 0 && f.c.Duration >= trailerSec {
+			f.c.add("noAudioStreams", w.NoAudio, 0, "its program chain turns on no audio stream, where other titles of title set %d do", f.c.VTS)
 		}
 	}
 	if len(vtsUsed) < 2 {

@@ -258,6 +258,15 @@ func brokenChapters() fxDisc {
 	return d
 }
 
+// silentBait: a clean title a little longer than the film, in order and in
+// the cell address table, whose program chain turns on no soundtrack.
+func silentBait() fxDisc {
+	return fxDisc{titles: titlesFor(1, 2), vts: []fxVTS{{titleSectors: 70000, audio: 2, pgcs: []fxPGC{
+		{title: 1, cells: cellsAt(30000, 31, 4*min_, 1000), silent: true}, // 2:04:00
+		{title: 2, cells: feature28()},
+	}}}}
+}
+
 // tvNoPlayAll: five episodes as five titles, numbered against their order
 // on the disc, and no title that plays them all.
 func tvNoPlayAll() fxDisc {
@@ -372,6 +381,7 @@ var scenarios = []scenario{
 	{name: "guarded feature behind the Play button", disc: guardedFeature, opened: true, main: 2, level: "high",
 		flags: map[int]Flag{2: FlagMenuPlay}},
 	{name: "chapter table points nowhere", disc: brokenChapters, main: 1, chapters: 6, length: 120},
+	{name: "a longer title with no soundtrack", disc: silentBait, main: 2, length: 112},
 	{name: "TV disc without play all", disc: tvNoPlayAll, main: 4, episodes: []int{3, 1, 5, 2, 4},
 		class: map[int]string{3: ClassEpisode, 6: ClassTrailer}},
 	{name: "play all of one cell per episode", disc: tvOneCellPlayAll, main: 1, episodes: []int{5, 2, 3, 4}, playAll: 1},

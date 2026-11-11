@@ -99,6 +99,7 @@ name in the first column is the `Signal` of the evidence.
 | `badChapters` | −10 | The chapter table names a chain or program that doesn't exist |
 | `timeMismatch` | −3 | A chain's play time isn't the sum of its cells' |
 | `noVideoFiles` | −60 | Its title set has an index and no video files (opened discs). None of its time is counted |
+| `noAudioStreams` | −20 | Its first program chain turns on no audio stream (the PGC's audio stream control), where other titles of its title set do, and it is four minutes or longer |
 | `evenChapters` | +3 | Three or more chapters, averaging 1 to 20 minutes, without wild swings in length |
 | `audioStreams` | +2 | Its title set has the most audio streams, where they differ |
 | `subtitleStreams` | +1 | Its title set has the most subtitle streams, where they differ |
