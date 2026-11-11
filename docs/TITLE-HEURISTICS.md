@@ -63,7 +63,7 @@ A title is read two ways, and the reading that scores better is kept (`Candidate
   cold start to a menu is noted (`guarded`) and read from its chapters.
 
 Both are bounded: 4096 cells and 512 chains to a title, and all the dry runs of one analysis share a
-budget of three million commands and navigator hops.
+budget of a million commands and navigator hops; a real disc uses a few thousand.
 
 **Chapters** come from the chapter table: a chapter starts where the program its entry names starts.
 An entry that names nothing the title plays keeps its number, at the time of the chapter before it,

@@ -157,7 +157,7 @@ An index file is input from a stranger.
   budget covers all the index files of a disc: 32768 program chains and 400000 cells. Rows of a
   PGCIT that point at the same chain share it.
 - A title is never followed past 4096 cells or 512 chains, the VM stops after 10000 commands, the
-  navigator after 1000 hops, and the dry runs of an analysis share three million of both.
+  navigator after 1000 hops, and the dry runs of an analysis share a million of both.
 - Comparing titles is linear in their cells after grouping titles that play the same thing, with a
   budget; a disc of 99 titles and 2941 program chains opens in about 17 ms and ranks in about 65 ms
   on a laptop (`BenchmarkOpenStressDisc`, `BenchmarkAnalyzeStressDisc`), using about 85 MiB of

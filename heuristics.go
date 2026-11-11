@@ -334,7 +334,7 @@ const (
 	// analysisFuel is how many VM commands and navigator hops all the dry
 	// runs of one analysis may take together, and analysisWork how many
 	// steps the comparisons between titles may take.
-	analysisFuel = 3_000_000
+	analysisFuel = 1_000_000
 	analysisWork = 20_000_000
 )
 
