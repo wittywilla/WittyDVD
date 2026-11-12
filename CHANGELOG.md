@@ -5,6 +5,7 @@ What changed in WittyDVD, newest first. What changed before it had a repository 
 
 ## Unreleased
 
+- **WittyDVD 0.4.0:** a part of a file an image doesn't record (WittyDisc 0.2.1 gives it no place on the image) is refused with a message rather than streamed from the wrong bytes.
 - **WittyDVD 0.4.0:** The title ranking engine, table-by-table index reading with cross-table repair, padded unreadable sectors and the `analyze` and `readStats` calls listed above, for WittyMediaServer up to 0.8.x. The synthetic discs can be written out for other projects' tests (`WITTYDVD_SYNTH_OUT`). Checked against images of pressed film discs, which showed two mistakes, both fixed: short titles of sub-second cells that the menus play (frame-by-frame animations) were called cell-spam decoys and the disc copy-protected, and a film's featurettes of about one length were called a TV disc's episodes.
 - `wittydvdplayer` 0.3.0: the player module answers two new calls, `guide` and `choose`: the ranked main title with why and how sure, the feature's whole length, its versions (angles, parental cuts, other cuts), a TV disc's episodes, the other titles, warnings, repairs and padded sectors. A film the disc chains through several titles, or that only its commands put together, plays as one stream in the engine's order.
 
