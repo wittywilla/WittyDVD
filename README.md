@@ -85,6 +85,18 @@ answers no `sdui.items`. **The player stays each app's own:** playing the disc, 
 are the app's native player screen, not SDUI. The module has no settings page: its settings are in the server's own
 **Settings, Playback & discs**.
 
+**Why these sections are SDUI, and the rest isn't.** A disc module doesn't need SDUI to work. These sections are SDUI
+only because they are plain rows of a title's page that every app already knows how to draw: as SDUI, the iPhone,
+Apple TV and Android apps show a DVD's feature, scenes, episodes, versions and why this title with no code of their
+own, and the same words as the web. What stays each app's own, on purpose:
+
+- **Playing the disc, its menus and buttons, and the remote**: drawn frame by frame from the disc, with timing and
+  focus no page description could carry.
+- **Disc settings and naming titles and scenes**: an administrator's dialogs on the web's title page (**Manage this
+  title**), writing to the server's own routes (`PUT /api/items/{id}`, `PUT /api/items/{id}/disc/labels`).
+- **The server-wide disc settings**: the hand-built **Settings, Playback & discs**, as every setting is.
+- **WittyMediaPlayer's disc screens**: the desktop player draws its own.
+
 ## Building and testing
 
 You need Go 1.26 or newer. In a worktree, first run the copy of `dev-modules.mjs` kept above the repositories (`node D:/projects/dev-modules.mjs` on the development machine). It writes a `go.work` that git ignores, so the checkout builds against the repositories beside it. Never run `go work use`.
