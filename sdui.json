@@ -1,0 +1,10 @@
+{
+  "format": "wittymodule-sdui",
+  "formatVersion": 1,
+  "module": "wittydvd",
+  "catalog": 2,
+  "theme": {
+    "scope": "wittydvd",
+    "label": "DVDs"
+  }
+}
