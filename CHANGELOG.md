@@ -5,6 +5,7 @@ What changed in WittyDVD, newest first. What changed before it had a repository 
 
 ## Unreleased
 
+- **WittyDVD 0.4.0:** a DVD's page in every app comes from this module's `sdui.json`: Feature Presentation, Scenes, Episodes, Other versions, Bonus material, Disc menus, Why this title, Diagnosis and the refusal of an encrypted disc, as sections between the title's header and its cast. The player stays the app's own.
 - **WittyDVD 0.4.0:** built for module API 4: it carries `sdui.json` (its theme scope, for the theme editor), kept equal to `UI()` by a test. Its pages stay the server's own disc pages.
 - **WittyDVD 0.4.0:** a part of a file an image doesn't record (WittyDisc 0.2.1 gives it no place on the image) is refused with a message rather than streamed from the wrong bytes.
 - **WittyDVD 0.4.0:** The title ranking engine, table-by-table index reading with cross-table repair, padded unreadable sectors and the `analyze` and `readStats` calls listed above, for WittyMediaServer up to 0.8.x. The synthetic discs can be written out for other projects' tests (`WITTYDVD_SYNTH_OUT`). Checked against images of pressed film discs, which showed two mistakes, both fixed: short titles of sub-second cells that the menus play (frame-by-frame animations) were called cell-spam decoys and the disc copy-protected, and a film's featurettes of about one length were called a TV disc's episodes.

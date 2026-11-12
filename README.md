@@ -61,6 +61,30 @@ A program is built for each system below, and the server uses the right one.
 
 On macOS and FreeBSD the server has no sandbox for a module's helper: it gets a small environment and a soft memory limit, and nothing more.
 
+## Its part of every app
+
+A DVD's page in every WittyMediaServer app comes from this module's own `sdui.json` (module API 4), kept equal to
+`UI()` in `sdui.go` by a test, so any app that draws the server's interface shows it in every look with no code of
+its own. Between the title's header and its cast, in this order, each section left out when it has nothing to show:
+
+| Section | What it shows |
+|---|---|
+| This disc can't be played | An encrypted disc: what happened, that nothing was changed or copied, and what the disc's index still says |
+| Feature Presentation | Play the film (the whole of it, however the disc cuts it up) and how many scenes it has |
+| Scenes | The film's chapters as pictures, each playing from its start |
+| Episodes | A TV disc's episodes in viewing order |
+| Other versions | Other cuts and camera angles than the one Play plays |
+| Bonus material | The disc's other titles worth watching, without its decoys |
+| Disc menus | Shortcuts straight into the disc's own menus |
+| Why this title | Which title is the film, why, how sure the engine is, and the other candidates |
+| Diagnosis | What was wrong with this copy and what was mended, and for an administrator **Check this disc** |
+
+Each section's source takes the page's title and answers for a DVD only. The server answers them from what it keeps
+about the disc (this module's ranking, an administrator's choice of film, the names given to its titles); the helper
+answers no `sdui.items`. **The player stays each app's own:** playing the disc, its menus and buttons, and the remote
+are the app's native player screen, not SDUI. The module has no settings page: its settings are in the server's own
+**Settings, Playback & discs**.
+
 ## Building and testing
 
 You need Go 1.26 or newer. In a worktree, first run the copy of `dev-modules.mjs` kept above the repositories (`node D:/projects/dev-modules.mjs` on the development machine). It writes a `go.work` that git ignores, so the checkout builds against the repositories beside it. Never run `go work use`.

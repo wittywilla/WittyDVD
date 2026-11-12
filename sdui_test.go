@@ -29,8 +29,18 @@ func TestSDUIMatchesTheManifest(t *testing.T) {
 	if m.API < wittymodule.SDUIFromAPI {
 		t.Errorf("api %d: the manifest should be built for module API %d or newer", m.API, wittymodule.SDUIFromAPI)
 	}
-	// The helper answers neither sdui.items nor settings.changed.
-	if ui := UI(); len(ui.Sources) != 0 || len(ui.Settings) != 0 {
-		t.Error("UI() declares sources or settings: the helper must answer sdui.items or settings.changed first")
+	// Its sources are about the server's copy of a disc, so the server answers them; the
+	// helper reads no settings of its own.
+	ui := UI()
+	if len(ui.Settings) != 0 {
+		t.Error("UI() declares settings: the helper must answer settings.changed first")
+	}
+	for _, s := range ui.Sources {
+		if len(s.PageKinds) != 1 || s.PageKinds[0] != "detail" || len(s.Params) == 0 || s.Params[0].Name != "item" {
+			t.Errorf("%s: a disc's section takes its page's title, on a title's page only", s.Type)
+		}
+	}
+	if len(ui.Inserts) != len(ui.Sources) {
+		t.Errorf("%d sections for %d sources", len(ui.Inserts), len(ui.Sources))
 	}
 }
