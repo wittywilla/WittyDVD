@@ -684,6 +684,11 @@ func (s *imageSource) VOBExtents(sp Space) ([]FileExtent, error) {
 			break
 		}
 		for _, e := range f.Extents {
+			// A part the disc doesn't record has no place on the image (offset -1):
+			// the video can't be streamed from it as it lies.
+			if e.Offset < 0 {
+				return nil, fmt.Errorf("VIDEO_TS/%s: part of it isn't recorded on the disc", name)
+			}
 			out = append(out, FileExtent{File: s.img.Path, Offset: e.Offset, Length: e.Length})
 		}
 	}
