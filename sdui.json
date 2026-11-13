@@ -2,7 +2,7 @@
   "format": "wittymodule-sdui",
   "formatVersion": 1,
   "module": "wittydvd",
-  "catalog": 7,
+  "catalog": 8,
   "theme": {
     "scope": "wittydvd",
     "label": "DVDs"
@@ -170,7 +170,7 @@
       ],
       "paged": false,
       "title": "This disc can't be played",
-      "since": 7
+      "since": 8
     },
     {
       "type": "wittydvd.feature",
@@ -197,7 +197,7 @@
       ],
       "paged": false,
       "title": "Feature Presentation",
-      "since": 7
+      "since": 8
     },
     {
       "type": "wittydvd.scenes",
@@ -233,7 +233,7 @@
       ],
       "paged": false,
       "title": "Scenes",
-      "since": 7
+      "since": 8
     },
     {
       "type": "wittydvd.episodes",
@@ -269,7 +269,7 @@
       ],
       "paged": false,
       "title": "Episodes",
-      "since": 7
+      "since": 8
     },
     {
       "type": "wittydvd.versions",
@@ -305,7 +305,7 @@
       ],
       "paged": false,
       "title": "Other versions",
-      "since": 7
+      "since": 8
     },
     {
       "type": "wittydvd.bonus",
@@ -341,7 +341,7 @@
       ],
       "paged": false,
       "title": "Bonus material",
-      "since": 7
+      "since": 8
     },
     {
       "type": "wittydvd.menus",
@@ -368,7 +368,7 @@
       ],
       "paged": false,
       "title": "Disc menus",
-      "since": 7
+      "since": 8
     },
     {
       "type": "wittydvd.why",
@@ -404,7 +404,7 @@
       ],
       "paged": false,
       "title": "Why this title",
-      "since": 7
+      "since": 8
     },
     {
       "type": "wittydvd.copy",
@@ -440,7 +440,7 @@
       ],
       "paged": false,
       "title": "Diagnosis",
-      "since": 7
+      "since": 8
     }
   ]
 }
