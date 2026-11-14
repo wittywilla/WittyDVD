@@ -3,8 +3,9 @@
 What changed in WittyDVD, newest first. What changed before it had a repository of its own is in the
 [WittyMediaServer changelog](https://github.com/wittywilla/WittyMediaServer/blob/master/CHANGELOG.md).
 
-## Unreleased
+## 0.5.0
 
+- Built on WittyModule 0.5.4 and module API 5.
 - WittyLog: the module declares its own log options (`nav`, `menus`) in `module.json`; the server no longer lists them for it.
 - **WittyDVD 0.5.0: module API 5.** A DVD's page is WittyDVD's own: its routes at `/api/modules/wittydvd/discs/{id}` (the page), `/analysis` (why a title is the film, and an administrator's "Rank again"), `/choice` (an administrator's choice of film, and forgetting it) and `/labels` (the names of its titles and chapters), and the sources of its sections in every app, answered by its service. The commands those rows run are its own (`wittydvd.choose`, `wittydvd.clearChoice`, `wittydvd.rank`). The names given to titles and chapters are kept in its own database (`labels.db`), starting empty; removing WittyDVD asks whether to keep them. What only the server keeps and checks, the disc's ranking from this module's helper and an administrator's choice of film, it asks the server's host API for. The same program is the helper for one disc and the service: the service reads no disc. The player, with the disc's own menus, is WittyDisc's.
 - **WittyDVD 0.4.0:** a DVD's page in every app comes from this module's `sdui.json`: Feature Presentation, Scenes, Episodes, Other versions, Bonus material, Disc menus, Why this title, Diagnosis and the refusal of an encrypted disc, as sections between the title's header and its cast. The player stays the app's own.
