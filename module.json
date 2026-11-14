@@ -26,5 +26,11 @@
     "data"
   ],
   "dataFormat": 1,
-  "dataFrom": 1
+  "dataFrom": 1,
+  "capabilities": {
+    "logTopics": [
+      "nav|Navigation|Every step the DVD navigator takes: program chains, cells and commands",
+      "menus|Menus and buttons|Each menu read from the disc, and each button pressed"
+    ]
+  }
 }
