@@ -3,16 +3,19 @@
 
 package wittydvd
 
-import "github.com/wittywilla/wittymodule/sdui"
+import (
+	"github.com/wittywilla/wittydvd/api"
+	"github.com/wittywilla/wittymodule/sdui"
+)
 
 // ModuleID is this module's ID, the same as module.json's.
 const ModuleID = "wittydvd"
 
 // The sources of a DVD's sections on its page. Each takes the page's title ($item) and
-// answers only for a DVD: on any other title its sections are left out. The server answers
-// them (WittyMediaServer internal/server/disc_sources.go), as it does WittyPlay's, because what
-// they show is the server's: the disc's kept ranking from this module's helper, an
-// administrator's choice of film and the names given to its titles.
+// answers only for a DVD: on any other title its sections are left out. WittyDVD's service
+// answers them (package api), asking the server's host API for what only the server keeps: the
+// disc's ranking from this module's helper, checked there, and an administrator's choice of film.
+// The names given to its titles are WittyDVD's own.
 const (
 	SourceFeature  = ModuleID + ".feature"
 	SourceScenes   = ModuleID + ".scenes"
@@ -25,10 +28,11 @@ const (
 	SourceRefusal  = ModuleID + ".refusal"
 )
 
-// UI is WittyDVD's part of every app (module API 4, WittyMediaServer docs/SDUI-MODULES.md), written
+// UI is WittyDVD's part of every app (module API 5, WittyMediaServer docs/SDUI-MODULES.md), written
 // to sdui.json beside module.json: a DVD's sections on its page, in every look (Design 2's
-// "discpage", "whytitle" and "discrefuse" boards). The player, with the disc's own menus and the
-// remote, stays each app's own screen.
+// "discpage", "whytitle" and "discrefuse" boards), the TV apps' among them, and the commands its
+// rows run (choosing the film, ranking again), each one of its own routes. The player, with the
+// disc's own menus and the remote, is WittyDisc's in a browser and each app's own screen elsewhere.
 func UI() *sdui.Module {
 	m := sdui.New(ModuleID, "DVDs")
 	item := func(more ...sdui.PropSpec) []sdui.PropSpec {
@@ -54,6 +58,7 @@ func UI() *sdui.Module {
 		"Which title is the film and why, how sure the disc engine is, and the other candidates, each to play once.", item(limit(20, 32)), "landscape")
 	src(SourceCopy, "Diagnosis", "check", "Diagnosis",
 		"What was wrong with this copy of the disc and what was mended, and for an administrator the way to check it.", item(limit(32, 32)), "landscape")
+	m.Commands = api.Config{Module: ModuleID}.Commands()
 	// On a title's page, between its header and its cast and crew, in this order.
 	put := func(s sdui.Section) {
 		m.Inserts = append(m.Inserts, sdui.ModuleInsert{Page: "detail", Before: "credits", Section: s})

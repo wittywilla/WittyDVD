@@ -79,11 +79,13 @@ its own. Between the title's header and its cast, in this order, each section le
 | Why this title | Which title is the film, why, how sure the engine is, and the other candidates |
 | Diagnosis | What was wrong with this copy and what was mended, and for an administrator **Check this disc** |
 
-Each section's source takes the page's title and answers for a DVD only. The server answers them from what it keeps
-about the disc (this module's ranking, an administrator's choice of film, the names given to its titles); the helper
-answers no `sdui.items`. **The player stays each app's own:** playing the disc, its menus and buttons, and the remote
-are the app's native player screen, not SDUI. The module has no settings page: its settings are in the server's own
-**Settings, Playback & discs**.
+Each section's source takes the page's title and answers for a DVD only. The module's service answers them (module
+API 5, package `api`), asking the server's host API for what only the server keeps and checks: this module's ranking,
+read by its helper and checked by the server, and an administrator's choice of film. The names given to its titles are
+its own, in its own database. Their rows run its own commands (`wittydvd.choose`, `wittydvd.clearChoice`, `wittydvd.rank`),
+which are its routes under `/api/modules/wittydvd/discs/{id}`. **The player is each app's own:** playing the disc, its
+menus and buttons, and the remote are the app's native player screen, not SDUI; in a browser it is WittyDisc's web part.
+The module has no settings page: the server's disc settings are WittyDisc's **Settings, DVDs and Blu-rays**.
 
 **Why these sections are SDUI, and the rest isn't.** A disc module doesn't need SDUI to work. These sections are SDUI
 only because they are plain rows of a title's page that every app already knows how to draw: as SDUI, the iPhone,
@@ -93,8 +95,8 @@ own, and the same words as the web. What stays each app's own, on purpose:
 - **Playing the disc, its menus and buttons, and the remote**: drawn frame by frame from the disc, with timing and
   focus no page description could carry.
 - **Disc settings and naming titles and scenes**: an administrator's dialogs on the web's title page (**Manage this
-  title**), writing to the server's own routes (`PUT /api/items/{id}`, `PUT /api/items/{id}/disc/labels`).
-- **The server-wide disc settings**: the hand-built **Settings, Playback & discs**, as every setting is.
+  title**, WittyDisc's), writing to the server's `PUT /api/items/{id}` and this module's `PUT /api/modules/wittydvd/discs/{id}/labels`.
+- **The server-wide disc settings**: WittyDisc's hand-built **Settings, DVDs and Blu-rays**.
 - **WittyMediaPlayer's disc screens**: the desktop player draws its own.
 
 ## Building and testing

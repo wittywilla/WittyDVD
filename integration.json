@@ -1,0 +1,92 @@
+{
+  "format": "wittymodule-integration",
+  "formatVersion": 1,
+  "module": "wittydvd",
+  "host": {
+    "http": ">=1",
+    "sdui": ">=8",
+    "host": ">=1"
+  },
+  "http": [
+    {
+      "path": "/discs/{id}",
+      "methods": [
+        "GET"
+      ],
+      "auth": "user",
+      "item": "id",
+      "limits": {
+        "time": "2m"
+      }
+    },
+    {
+      "path": "/discs/{id}/analysis",
+      "methods": [
+        "GET"
+      ],
+      "auth": "user",
+      "item": "id",
+      "limits": {
+        "time": "5m"
+      }
+    },
+    {
+      "path": "/discs/{id}/analysis",
+      "methods": [
+        "POST"
+      ],
+      "auth": "admin",
+      "item": "id",
+      "limits": {
+        "body": "4KB",
+        "time": "5m"
+      }
+    },
+    {
+      "path": "/discs/{id}/choice",
+      "methods": [
+        "PUT",
+        "DELETE"
+      ],
+      "auth": "admin",
+      "item": "id",
+      "limits": {
+        "body": "4KB"
+      }
+    },
+    {
+      "path": "/discs/{id}/labels",
+      "methods": [
+        "PUT"
+      ],
+      "auth": "admin",
+      "item": "id",
+      "limits": {
+        "body": "256KB"
+      }
+    }
+  ],
+  "sdui": {
+    "ops": [
+      {
+        "id": "wittydvd.choose",
+        "http": "PUT /discs/{id}/choice"
+      },
+      {
+        "id": "wittydvd.clearChoice",
+        "http": "DELETE /discs/{id}/choice"
+      },
+      {
+        "id": "wittydvd.rank",
+        "http": "POST /discs/{id}/analysis"
+      }
+    ]
+  },
+  "data": {
+    "store": "sqlite",
+    "backup": "library"
+  },
+  "lifecycle": {
+    "uninstall": "ask-keep-data"
+  }
+}

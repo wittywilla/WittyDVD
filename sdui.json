@@ -442,5 +442,38 @@
       "title": "Diagnosis",
       "since": 8
     }
+  ],
+  "commands": [
+    {
+      "op": "wittydvd.choose",
+      "label": "Make it the film",
+      "description": "An administrator makes params.ttn (a title) the disc's film (item), for everyone, instead of the engine's pick.",
+      "method": "PUT",
+      "path": "/api/modules/wittydvd/discs/{item}/choice",
+      "body": "{\"ttn\":\"{ttn}\"}",
+      "params": [
+        {
+          "name": "ttn",
+          "type": "int",
+          "label": "Title",
+          "required": true
+        }
+      ]
+    },
+    {
+      "op": "wittydvd.clearChoice",
+      "label": "Use the engine's pick",
+      "description": "Forgets the film an administrator chose for the disc (item): the engine's pick plays again.",
+      "method": "DELETE",
+      "path": "/api/modules/wittydvd/discs/{item}/choice"
+    },
+    {
+      "op": "wittydvd.rank",
+      "label": "Rank again",
+      "description": "An administrator has the engine work out which title of the disc (item) is the film again.",
+      "method": "POST",
+      "path": "/api/modules/wittydvd/discs/{item}/analysis",
+      "body": "{\"secondOpinion\":false}"
+    }
   ]
 }

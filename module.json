@@ -1,12 +1,12 @@
 {
   "id": "wittydvd",
   "name": "WittyDVD",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "repo": "wittywilla/WittyDVD",
   "license": "AGPL-3.0-or-later",
   "delivery": "helper",
   "entry": "wittydvd-module",
-  "api": 4,
+  "api": 5,
   "minServer": "0.8.0-alpha",
   "maxServer": "0.8.x",
   "group": "discs",
@@ -20,6 +20,11 @@
   "needs": [
     "FFmpeg, which comes with the server"
   ],
-  "updates": "All of the engine: the disc's structure, menus, buttons and commands, where its video lies, and subtitles.",
-  "stays": "The session code that turns steps into streams stays with the server, as does refusing encrypted discs, on purpose."
+  "updates": "All of the engine: the disc's structure, menus, buttons and commands, where its video lies, and subtitles; and a DVD's page: its sections in every app, why a title is the film, and the names given to its titles and chapters, kept in its own database.",
+  "stays": "The session code that turns steps into streams stays with the server, as does refusing encrypted discs and checking what the engine says, on purpose. Which title is a disc's film, and an administrator's choice of another, are kept with the server's copy of the disc.",
+  "permissions": [
+    "data"
+  ],
+  "dataFormat": 1,
+  "dataFrom": 1
 }

@@ -18,11 +18,14 @@
 
 // Command wittydvd-module is WittyDVD as a helper process, one for each open disc, so
 // a new version of the engine can reach a server without a new server. See WittyModule
-// for the protocol and package wire for what is said over it.
+// for the protocol and package wire for what is said over it. Started as WittyDVD's service
+// (module API 5), the same program answers its routes and SDUI sources instead, and opens no
+// disc (package api).
 package main
 
 import (
 	"github.com/wittywilla/wittydvd"
+	"github.com/wittywilla/wittydvd/api"
 	"github.com/wittywilla/wittydvd/diagnose"
 	"github.com/wittywilla/wittydvd/wire"
 	"github.com/wittywilla/wittymodule"
@@ -30,5 +33,5 @@ import (
 
 func main() {
 	h := &diagnose.Handler{Next: new(wire.Helper).Handle}
-	wittymodule.Main(wittydvd.ManifestJSON, h.Handle)
+	wittymodule.Main(wittydvd.ManifestJSON, (&api.Dual{Config: api.Config{Module: wittydvd.ModuleID}, Helper: h.Handle}).Handle)
 }

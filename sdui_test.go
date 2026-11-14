@@ -29,8 +29,8 @@ func TestSDUIMatchesTheManifest(t *testing.T) {
 	if m.API < wittymodule.SDUIFromAPI {
 		t.Errorf("api %d: the manifest should be built for module API %d or newer", m.API, wittymodule.SDUIFromAPI)
 	}
-	// Its sources are about the server's copy of a disc, so the server answers them; the
-	// helper reads no settings of its own.
+	// Its sources are answered by its service, about the server's copy of a disc; it reads no
+	// settings of its own.
 	ui := UI()
 	if len(ui.Settings) != 0 {
 		t.Error("UI() declares settings: the helper must answer settings.changed first")
