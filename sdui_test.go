@@ -26,8 +26,8 @@ func TestSDUIMatchesTheManifest(t *testing.T) {
 	if m.ID != ModuleID || UI().Module != m.ID || UI().Theme.Scope != m.ID {
 		t.Errorf("manifest %q, sdui.json module %q, scope %q: all three must be the same", m.ID, UI().Module, UI().Theme.Scope)
 	}
-	if m.API < wittymodule.SDUIFromAPI {
-		t.Errorf("api %d: the manifest should be built for module API %d or newer", m.API, wittymodule.SDUIFromAPI)
+	if m.API != wittymodule.API {
+		t.Errorf("api %d: the manifest should be built for module API %d", m.API, wittymodule.API)
 	}
 	// Its sources are answered by its service, about the server's copy of a disc; it reads no
 	// settings of its own.
