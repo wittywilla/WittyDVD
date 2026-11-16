@@ -151,16 +151,6 @@ To use it as a library, `wittydvd.Open` opens an image or folder, and `wittydvd.
 
 GNU Affero General Public License v3.0 (or later): see [LICENSE](LICENSE) and [NOTICE](NOTICE). If you redistribute it or build on it, please keep the NOTICE attribution. It's an original implementation and contains no code from other disc libraries. Each release archive carries a `THIRD-PARTY-NOTICES.txt` for what its programs link.
 
-## Legal
-
-WittyDVD is an independent open-source project. It isn't associated with, sponsored by or endorsed
-by the DVD format's owners, any film studio or any other player project. “DVD” is a trademark of DVD
-Format/Logo Licensing Corporation; WittyDVD isn't a licensed or certified DVD product and uses no
-DVD logo. CSS-scrambled discs are refused, nothing is decrypted, and no media comes with it: you're
-responsible for having the rights to what you open. Any third-party names here only describe what it
-works with, and belong to their owners. It's provided “as is”, with no warranty; see
-[LICENSE](LICENSE). Local law applies to how you use it. This isn't legal advice.
-
 <!-- module-kit -->
 ## Releasing
 
@@ -182,3 +172,13 @@ To take a version back, run the *withdraw* workflow from the *Actions* tab. It a
 
 Licensed under AGPL-3.0-or-later: see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 <!-- /module-kit -->
+
+## Legal
+
+WittyDVD is an independent open-source project. It isn't associated with, sponsored by or endorsed
+by the DVD format's owners, any film studio or any other player project. “DVD” is a trademark of DVD
+Format/Logo Licensing Corporation; WittyDVD isn't a licensed or certified DVD product and uses no
+DVD logo. CSS-scrambled discs are refused, nothing is decrypted, and no media comes with it: you're
+responsible for having the rights to what you open. Any third-party names here only describe what it
+works with, and belong to their owners. It's provided “as is”, with no warranty; see
+[LICENSE](LICENSE). Local law applies to how you use it. This isn't legal advice.
