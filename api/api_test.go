@@ -248,6 +248,13 @@ func TestDual(t *testing.T) {
 		helped = method
 		return "ok", nil, nil
 	}}
+	t.Cleanup(func() { // the last call opens the database again; Windows won't delete it open
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if d.app != nil && d.app.Labels != nil {
+			_ = d.app.Labels.Close()
+		}
+	})
 	if res, _, err := d.Handle("open", nil); err != nil || res != "ok" || helped != "open" {
 		t.Fatalf("a helper call: %v %v %q", res, err, helped)
 	}
