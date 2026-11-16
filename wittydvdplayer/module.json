@@ -1,11 +1,11 @@
 {
   "id": "wittydvdplayer",
   "name": "WittyDVD for WittyMediaPlayer",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "repo": "wittywilla/WittyDVD",
   "delivery": "helper",
   "entry": "wittydvd-player",
-  "api": 3,
+  "api": 5,
   "minServer": "0.1.0",
   "maxServer": "0.1.x"
 }
