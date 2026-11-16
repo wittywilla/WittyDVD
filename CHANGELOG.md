@@ -3,6 +3,10 @@
 What changed in WittyDVD, newest first. What changed before it had a repository of its own is in the
 [WittyMediaServer changelog](https://github.com/wittywilla/WittyMediaServer/blob/master/CHANGELOG.md).
 
+## wittydvdplayer 0.4.0
+
+- The player module declares module API 5, so WittyMediaPlayer on WittyModule 0.5.x uses it. Built on wittydvd 0.5.1, whose engine has no network code, and WittyDisc 0.3.2.
+
 ## 0.5.1
 
 - The engine (package `wittydvd`) no longer links the module's service: its commands are described by the new package `commands`, which has no networking, so WittyMediaPlayer's helper contains no network code. A test keeps it so.
