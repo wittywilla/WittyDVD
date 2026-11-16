@@ -3,6 +3,10 @@
 What changed in WittyDVD, newest first. What changed before it had a repository of its own is in the
 [WittyMediaServer changelog](https://github.com/wittywilla/WittyMediaServer/blob/master/CHANGELOG.md).
 
+## 0.5.1
+
+- Tests: TestDual closes the database it leaves open, so the tests pass on Windows (#4).
+
 ## 0.5.0
 
 - Built on WittyModule 0.5.4 and module API 5.
