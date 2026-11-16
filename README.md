@@ -2,6 +2,8 @@
 
 Plays DVD images and `VIDEO_TS` folders in WittyMediaServer the way a DVD player does, with their real menus. You need it if your disc libraries hold DVDs.
 
+It's a module of [WittyMediaServer](https://github.com/wittywilla/WittyMediaServer) ([wittymediaserver.com](https://wittymediaserver.com)): the server runs it as a helper program and asks it about each disc. This version is built for module API 5, the only one WittyMediaServer 0.8.0-alpha takes.
+
 <!-- pictures -->
 
 ![A DVD's own animated menu in a browser](docs/images/dvd-menu.webp)
@@ -38,7 +40,7 @@ How to use it is in **Help** inside WittyMediaServer: see DVDs. How titles are r
 
 ## How to get it
 
-An admin adds it from the module store inside WittyMediaServer: **Settings → Modules**, then **Browse the store**, then **Add** beside WittyDVD. That needs WittyMediaServer 0.6.0-alpha or later, and it works with nothing older. The range this version fits is in `module.json`: 0.6.0-alpha through 0.6.x.
+An admin adds it from the module store inside WittyMediaServer: **Settings → Modules**, then **Browse the store**, then **Add** beside WittyDVD. This version is built for module API 5 and fits WittyMediaServer 0.8.0-alpha through 0.8.x, as its `module.json` says. It works with nothing older: the server takes module API 5 only. How modules work is in the server's [docs/MODULES.md](https://github.com/wittywilla/WittyMediaServer/blob/master/docs/MODULES.md) and [docs/MODULES-API5.md](https://github.com/wittywilla/WittyMediaServer/blob/master/docs/MODULES-API5.md).
 
 ## What it needs
 
@@ -63,7 +65,7 @@ On macOS and FreeBSD the server has no sandbox for a module's helper: it gets a 
 
 ## Its part of every app
 
-A DVD's page in every WittyMediaServer app comes from this module's own `sdui.json` (module API 4), kept equal to
+A DVD's page in every WittyMediaServer app comes from this module's own `sdui.json` (module API 5), kept equal to
 `UI()` in `sdui.go` by a test, so any app that draws the server's interface shows it in every look with no code of
 its own. Between the title's header and its cast, in this order, each section left out when it has nothing to show:
 
