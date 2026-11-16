@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wittywilla/wittydvd/commands"
 	"github.com/wittywilla/wittymodule/host"
 	"github.com/wittywilla/wittymodule/sdui"
 	core "github.com/wittywilla/wittymodule/sdui/core"
@@ -28,31 +29,14 @@ var sourceNames = []string{"feature", "scenes", "episodes", "versions", "bonus",
 
 // Commands, after "<module>.": its own routes, which check again who is asking.
 const (
-	CommandChoose      = "choose"      // PUT /discs/{item}/choice {"ttn"}
-	CommandClearChoice = "clearChoice" // DELETE /discs/{item}/choice
-	CommandRank        = "rank"        // POST /discs/{item}/analysis
-	CommandCompare     = "compare"     // POST /discs/{item}/analysis {"secondOpinion":true}, Blu-rays
+	CommandChoose      = commands.Choose
+	CommandClearChoice = commands.ClearChoice
+	CommandRank        = commands.Rank
+	CommandCompare     = commands.Compare
 )
 
 // Commands are the module's own commands, as its sdui.json declares them.
-func (c Config) Commands() []core.CommandSpec {
-	routes := "/api/modules/" + c.Module + "/discs/{item}"
-	unit := strings.ToLower(c.Unit())
-	out := []core.CommandSpec{
-		{Op: c.Module + "." + CommandChoose, Label: "Make it the film", Method: "PUT", Path: routes + "/choice", Body: `{"ttn":"{ttn}"}`,
-			Params:      []core.CommandParam{{Name: "ttn", Type: "int", Label: c.Unit(), Required: true}},
-			Description: fmt.Sprintf("An administrator makes params.ttn (a %s) the disc's film (item), for everyone, instead of the engine's pick.", unit)},
-		{Op: c.Module + "." + CommandClearChoice, Label: "Use the engine's pick", Method: "DELETE", Path: routes + "/choice",
-			Description: "Forgets the film an administrator chose for the disc (item): the engine's pick plays again."},
-		{Op: c.Module + "." + CommandRank, Label: "Rank again", Method: "POST", Path: routes + "/analysis", Body: `{"secondOpinion":false}`,
-			Description: fmt.Sprintf("An administrator has the engine work out which %s of the disc (item) is the film again.", unit)},
-	}
-	if c.Bluray {
-		out = append(out, core.CommandSpec{Op: c.Module + "." + CommandCompare, Label: "Compare with libbluray", Method: "POST", Path: routes + "/analysis", Body: `{"secondOpinion":true}`,
-			Description: "An administrator has a libbluray installed on the server compare its reading of the disc (item); the server's setting has to allow it."})
-	}
-	return out
-}
+func (c Config) Commands() []core.CommandSpec { return commands.List(c.Module, c.Bluray) }
 
 // Items answers the server's sdui.items call for one of the module's sources.
 func (a *App) Items(req sdui.ItemsRequest) (sdui.ItemsAnswer, error) {

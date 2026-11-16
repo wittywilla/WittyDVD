@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/wittywilla/wittydvd/commands"
 	"github.com/wittywilla/wittymodule/host"
 	"github.com/wittywilla/wittymodule/service"
 )
@@ -36,12 +37,7 @@ type Config struct {
 }
 
 // Unit is what the disc calls its titles.
-func (c Config) Unit() string {
-	if c.Bluray {
-		return "Playlist"
-	}
-	return "Title"
-}
+func (c Config) Unit() string { return commands.Unit(c.Bluray) }
 
 // Host is the host API, as much of it as this needs.
 type Host interface {

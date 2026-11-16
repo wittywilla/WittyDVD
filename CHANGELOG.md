@@ -5,6 +5,7 @@ What changed in WittyDVD, newest first. What changed before it had a repository 
 
 ## 0.5.1
 
+- The engine (package `wittydvd`) no longer links the module's service: its commands are described by the new package `commands`, which has no networking, so WittyMediaPlayer's helper contains no network code. A test keeps it so.
 - Tests: TestDual closes the database it leaves open, so the tests pass on Windows (#4).
 
 ## 0.5.0
