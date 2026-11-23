@@ -1,7 +1,7 @@
 {
   "id": "wittydvd",
   "name": "WittyDVD",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "repo": "wittywilla/WittyDVD",
   "license": "AGPL-3.0-or-later",
   "delivery": "helper",
