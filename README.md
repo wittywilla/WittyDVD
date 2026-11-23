@@ -147,6 +147,8 @@ To use it as a library, `wittydvd.Open` opens an image or folder, and `wittydvd.
 
 `wittydvdplayer/` is the same engine as a program of its own for WittyMediaPlayer, with its own `go.mod` and manifest.
 
+**Working on a Mac?** Start with WittyMediaServer's [MAC-START-HERE.md](https://github.com/wittywilla/WittyMediaServer/blob/v0.8.1-alpha/MAC-START-HERE.md): what to install, what to clone, and every Mac task in order: this module's is item 7.1 (wittywilla/WittyMediaServer#571).
+
 ## Licence
 
 GNU Affero General Public License v3.0 (or later): see [LICENSE](LICENSE) and [NOTICE](NOTICE). If you redistribute it or build on it, please keep the NOTICE attribution. It's an original implementation and contains no code from other disc libraries. Each release archive carries a `THIRD-PARTY-NOTICES.txt` for what its programs link.
