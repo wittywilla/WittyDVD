@@ -16,8 +16,6 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -653,22 +651,6 @@ func openFS(t testing.TB, fsys fs.FS) *Opened {
 		t.Fatal(err)
 	}
 	return o
-}
-
-// writeDir writes files (and any extra ones) into a temporary VIDEO_TS.
-func writeDir(t testing.TB, m fstest.MapFS) string {
-	t.Helper()
-	root := t.TempDir()
-	for name, f := range m {
-		p := filepath.Join(root, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, f.Data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return root
 }
 
 func titlesFor(vts int, n int) []fxTitle {
