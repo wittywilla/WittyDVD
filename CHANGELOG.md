@@ -3,6 +3,10 @@
 What changed in WittyDVD, newest first. What changed before it had a repository of its own is in the
 [WittyMediaServer changelog](https://github.com/wittywilla/WittyMediaServer/blob/master/CHANGELOG.md).
 
+## 0.5.3
+
+- **Updated dependencies:** github.com/wittywilla/wittydisc from 0.2.1 to 0.3.3; actions/setup-go from 7.0.0 to 7.1.0.
+
 ## 0.5.2
 
 - Nothing changes in how DVDs play: this release only tidies the module's tests.
