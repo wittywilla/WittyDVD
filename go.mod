@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.27.3
 
 require (
-	github.com/wittywilla/wittydisc v0.2.1
+	github.com/wittywilla/wittydisc v0.3.3
 	github.com/wittywilla/wittymodule v0.5.4
 	modernc.org/sqlite v1.62.0
 )
